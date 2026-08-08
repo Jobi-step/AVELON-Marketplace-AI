@@ -45,6 +45,10 @@ photos = st.file_uploader(
 )
 
 if st.button("Создать карточку объявления", type="primary"):
+    if purchase_price <= 0:
+        st.error("Укажи закупочную цену товара.")
+        st.stop()
+
     minimum_price = purchase_price + 1000
     recommended_price = purchase_price + 1500
     expected_profit = recommended_price - purchase_price
@@ -53,20 +57,28 @@ if st.button("Создать карточку объявления", type="prima
     st.header("Готовая карточка объявления")
 
     st.subheader("Заголовок")
-    st.write("Stone Island мужская чёрная худи")
-    st.caption("35 / 50 символов")
+
+    title_source = supplier_text.strip() if supplier_text.strip() else "Товар для Avito"
+    title = title_source[:50]
+
+    st.write(title)
+    st.caption(f"{len(title)} / 50 символов")
 
     st.subheader("Описание")
+
+    description_source = supplier_text.strip() if supplier_text.strip() else "Товар"
+
     st.write(
         f"""
-🖤 Худи Stone Island чёрного цвета.
+🔥 {description_source}
 
 📏 Размеры: {sizes or "уточняйте"}
 🧵 Материал: {material or "хлопок"}
 📦 Доставка по всей России.
 
-Отличный вариант на каждый день. Если нужны дополнительные фото
-или помощь с размером — пишите прямо сейчас.
+{extra_info if extra_info.strip() else ""}
+
+Если нужны дополнительные фото или помощь с размером — пишите прямо сейчас.
 """
     )
 
