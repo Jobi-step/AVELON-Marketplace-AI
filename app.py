@@ -62,6 +62,10 @@ if st.button("Создать карточку объявления", type="prima
         st.error("Укажи закупочную цену товара.")
         st.stop()
 
+    if not photos:
+        st.error("Добавь хотя бы одну фотографию товара.")
+        st.stop()
+
     minimum_price = purchase_price + 1000
     recommended_price = purchase_price + 1500
     expected_profit = recommended_price - purchase_price
