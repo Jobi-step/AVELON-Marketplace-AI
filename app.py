@@ -45,6 +45,10 @@ photos = st.file_uploader(
 )
 
 if st.button("Создать карточку объявления", type="primary"):
+    if not supplier_text.strip():
+        st.error("Добавь информацию о товаре.")
+        st.stop()
+
     if purchase_price <= 0:
         st.error("Укажи закупочную цену товара.")
         st.stop()
