@@ -44,6 +44,15 @@ photos = st.file_uploader(
     accept_multiple_files=True,
 )
 
+if photos:
+    st.markdown("### Предпросмотр фотографий")
+
+    columns = st.columns(3)
+
+    for index, photo in enumerate(photos):
+        with columns[index % 3]:
+            st.image(photo, caption=f"Фото {index + 1}", use_container_width=True)
+
 if st.button("Создать карточку объявления", type="primary"):
     if not supplier_text.strip():
         st.error("Добавь информацию о товаре.")
@@ -99,7 +108,7 @@ if st.button("Создать карточку объявления", type="prima
     st.write("Ожидаемый срок продажи: 7–14 дней")
 
     st.subheader("Фотографии")
-    if photos:
+    if photos: 
         st.write(f"Загружено фотографий: {len(photos)}")
         st.write("Рекомендуемый порядок: 1 → 2 → 3 → остальные")
     else:
