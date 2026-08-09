@@ -47,6 +47,10 @@ photos = st.file_uploader(
 if photos:
     st.markdown("### Предпросмотр фотографий")
 
+    if len(photos) > 10:
+        st.error("Можно загрузить максимум 10 фотографий.")
+        st.stop()
+
     columns = st.columns(3)
 
     for index, photo in enumerate(photos):
