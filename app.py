@@ -55,7 +55,7 @@ if photos:
 
     for index, photo in enumerate(photos):
         with columns[index % 3]:
-            st.image(photo, caption=f"Фото {index + 1}", use_container_width=True)
+            st.image(photo, caption=f"Фото {index + 1}", width="stretch")
 
 if st.button("Создать карточку объявления", type="primary"):
     if not supplier_text.strip():
