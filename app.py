@@ -181,12 +181,16 @@ if st.button("Создать карточку объявления", type="prima
     st.write(f"Ожидаемая прибыль: {expected_profit:,.0f} ₽")
 
     city = ai_result.get("city", "не определено")
+    city_reason = ai_result.get("city_reason", "Причина не определена")
     competition = ai_result.get("competition", "не определено")
     sale_probability = ai_result.get("sale_probability", "не определено")
+    if isinstance(sale_probability, str):
+     sale_probability = sale_probability.strip()
     sale_time = ai_result.get("sale_time", "не определено")
 
     st.subheader("Аналитика")
     st.write(f"Рекомендуемый город: {city}")
+    st.caption(f"Почему: {city_reason}")
     st.write(f"Конкуренция: {competition}")
     st.write(f"Вероятность продажи: {sale_probability}")
     st.write(f"Ожидаемый срок продажи: {sale_time}")
@@ -198,8 +202,18 @@ if st.button("Создать карточку объявления", type="prima
 
     st.subheader("Фотографии")
 
-    if photos:
-        st.write(f"Загружено фотографий: {len(photos)}")
-        st.write(f"Рекомендации AVELON: {photo_recommendations}")
-    else:
-        st.write("Фотографии пока не загружены")
+if photos:
+    st.write(f"Загружено фотографий: {len(photos)}")
+    st.markdown("### Рекомендации AVELON по фото")
+
+    recommendation_items = [
+        item.strip()
+        for item in photo_recommendations.replace("\n", " ").split(".")
+        if item.strip()
+    ]
+
+    for index, item in enumerate(recommendation_items, start=1):
+        st.write(f"{index}. {item}")
+
+else:
+    st.write("Фотографии пока не загружены")
