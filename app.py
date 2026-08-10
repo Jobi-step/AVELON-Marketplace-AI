@@ -23,16 +23,6 @@ purchase_price = st.number_input(
     step=100,
 )
 
-sizes = st.text_input(
-    "Размеры",
-    placeholder="Например: S, M, L, XL",
-)
-
-material = st.text_input(
-    "Материал",
-    placeholder="Например: хлопок",
-)
-
 extra_info = st.text_area(
     "Дополнительная информация",
     placeholder="Любые важные детали о товаре",
@@ -58,6 +48,7 @@ if photos:
             st.image(photo, caption=f"Фото {index + 1}", width="stretch")
 
 if st.button("Создать карточку объявления", type="primary"):
+
     if not supplier_text.strip():
         st.error("Добавь информацию о товаре.")
         st.stop()
@@ -79,7 +70,9 @@ if st.button("Создать карточку объявления", type="prima
 
     st.subheader("Заголовок")
 
-    title_source = supplier_text.strip() if supplier_text.strip() else "Товар для Avito"
+    st.subheader("Заголовок")
+
+    title_source = supplier_text.strip()
     title = title_source[:50]
 
     st.write(title)
@@ -87,16 +80,13 @@ if st.button("Создать карточку объявления", type="prima
 
     st.subheader("Описание")
 
-    description_source = supplier_text.strip() if supplier_text.strip() else "Товар"
+    description_source = supplier_text.strip()
 
     st.write(
         f"""
 🔥 {description_source}
 
-📏 Размеры: {sizes or "уточняйте"}
-🧵 Материал: {material or "хлопок"}
 📦 Доставка по всей России.
-
 {extra_info if extra_info.strip() else ""}
 
 Если нужны дополнительные фото или помощь с размером — пишите прямо сейчас.
