@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -44,6 +45,7 @@ def generate_listing(
     supplier_text,
     purchase_price,
     extra_info,
+    photos=None,
 ):
     if client is None:
         return {"error": "AI не настроен"}
@@ -63,6 +65,24 @@ def generate_listing(
 
 Дополнительная информация:
 {extra_info}
+
+Также проанализируй приложенные фотографии товара.
+
+Используй фотографии как дополнительный источник данных:
+- определи тип товара;
+- цвет;
+- визуальные особенности;
+- элементы дизайна;
+- надписи и логотипы;
+- примерную категорию;
+- проверь, соответствует ли текст поставщика фотографиям.
+
+Если текст поставщика и фотографии противоречат друг другу:
+- не выдумывай;
+- отдавай приоритет тому, что можно уверенно определить;
+- при сомнении возвращай "не определено".
+
+Не делай вывод об оригинальности товара по фотографиям.
 
 Определи:
 - бренд;
@@ -124,7 +144,18 @@ def generate_listing(
 - не используй слова "идеальный", "безупречный", "гарантированно", "эксклюзивный" без оснований;
 - не выдумывай скидки, возврат, наличие, гарантии, качество или другие условия;
 - не пиши, оригинальный товар или нет;
-- минимальная прибыль не меньше 1000 ₽;
+- - не пиши, оригинальный товар или нет;
+- заголовок оптимизируй под поиск Avito;
+- не выдумывай неизвестные характеристики;
+- если характеристику нельзя определить уверенно — напиши "не определено";
+- не используй Москву и Санкт-Петербург по умолчанию;
+- город выбирай по балансу спроса, конкуренции и стоимости продвижения;
+- если нет явных причин выбирать дорогой и перегретый рынок, предпочитай более выгодный город;
+- recommended_price рассчитывай как реалистичную цену для продажи;
+- minimum_price рассчитывай как нижнюю разумную границу цены для быстрой продажи;
+- expected_profit рассчитывай как разницу между recommended_price и purchase_price;
+- кратко объясняй, почему выбран этот город;
+- поле sale_probability всегда возвращай строкой в формате от 0% до 100%;
 - заголовок оптимизируй под поиск Avito;
 - город выбирай по балансу спроса, конкуренции и стоимости продвижения;
 - если характеристику нельзя определить уверенно — напиши "не определено";
@@ -157,16 +188,57 @@ def generate_listing(
     "photo_recommendations": ""
 }}
 """
+    user_content = [
+        {
+            "type": "text",
+            "text": prompt,
+        }
+    ]
 
+    if photos:
+        for photo in photos:
+            try:
+                photo_bytes = photo.getvalue()
+                mime_type = photo.type or "image/jpeg"
+                encoded_photo = base64.b64encode(photo_bytes).decode("utf-8")
+
+                user_content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{encoded_photo}"
+                        },
+                    }
+                )
+            except Exception:
+                continue
     response = client.chat.completions.create(
         model="google/gemini-2.5-flash",
         messages=[
             {
                 "role": "user",
-                "content": prompt,
+                "content": user_content,
             }
         ],
     )
 
     content = response.choices[0].message.content
+
+    if not content or not content.strip():
+        raise ValueError(
+            "AI вернул пустой ответ. Попробуй создать карточку ещё раз."
+        )
+
+    content = content.strip()
+
+    if content.startswith("```json"):
+        content = content[7:]
+    elif content.startswith("```"):
+        content = content[3:]
+
+    if content.endswith("```"):
+        content = content[:-3]
+
+        content = content.strip()
+
     return json.loads(content)

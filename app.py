@@ -80,7 +80,6 @@ if "saved_products" not in st.session_state:
     st.session_state["saved_products"] = load_saved_products()
     
 if st.button("Создать карточку объявления", type="primary"):
-
     if not supplier_text.strip():
         st.error("Добавь информацию о товаре.")
         st.stop()
@@ -94,11 +93,21 @@ if st.button("Создать карточку объявления", type="prima
         st.stop()
 
     with st.spinner("AVELON анализирует товар..."):
-        ai_result = generate_listing(
-            supplier_text=supplier_text,
-            purchase_price=purchase_price,
-            extra_info=extra_info,
-        )
+        try:
+            ai_result = generate_listing(
+                supplier_text=supplier_text,
+                purchase_price=purchase_price,
+                extra_info=extra_info,
+                photos=photos,
+            )
+        except Exception as e:
+            st.error("Не удалось создать карточку.")
+            st.code(str(e))
+            st.stop()
+
+    if isinstance(ai_result, dict) and ai_result.get("error"):
+        st.error(ai_result["error"])
+        st.stop()
 
     st.session_state["ai_result"] = ai_result
     st.session_state["supplier_text"] = supplier_text
@@ -119,19 +128,12 @@ if st.session_state.get("listing_created"):
         )
         st.session_state["opened_product"] = None
 
-    brand = ai_result.get("brand", "не определено")
-
-    product_type = ai_result.get("product_type", "не определено")
-
-    color = ai_result.get("color", "не определено")
-
-    gender = ai_result.get("gender", "не определено")
-
-    sizes = ai_result.get("sizes", "не определено")
-
-    material = ai_result.get("material", "не определено")
-
-    minimum_price = purchase_price + 1000
+    brand = ai_result.get("brand") or "не определено"
+    product_type = ai_result.get("product_type") or "не определено"
+    color = ai_result.get("color") or "не определено"
+    gender = ai_result.get("gender") or "не определено"
+    sizes = ai_result.get("sizes") or "не определено"
+    material = ai_result.get("material") or "не определено"
 
     recommended_price = ai_result.get ( 
     "recommended_price",
@@ -156,34 +158,32 @@ if st.session_state.get("listing_created"):
 
     st.subheader("Заголовок")
 
-    title = ai_result.get(
-    "title",
-    f"{brand} {gender} {color} {product_type}"
-)
+    title = ai_result.get("title", "")
 
-    title = title[:50]
+    if not isinstance(title, str) or not title.strip():
+        title = f"{brand} {gender} {color} {product_type}"
+
+    title = title.strip()[:50]
 
     st.write(title)
     st.caption(f"{len(title)} / 50 символов")
-    
+
     st.subheader("Описание")
 
-    description = ai_result.get(
-    "description",
-    f"""
-🔥 {brand} — {gender} {color} {product_type}.
+    description = ai_result.get("description", "")
 
-📏 Размеры: {sizes}
-🎨 Цвет: {color}
-👕 Тип: {product_type}
-🧵 Материал: {material}
-📦 Доставка по всей России.
-
-{extra_info if extra_info.strip() else ""}
-
-Есть вопросы по размерам или нужны дополнительные фото? Пишите или звоните прямо сейчас.
-"""
-)
+    if not isinstance(description, str) or not description.strip(): 
+        description = (
+            f"🔥 {brand} {product_type} {color}\n\n"
+            f"🏷 Бренд: {brand}\n"
+            f"👕 Тип товара: {product_type}\n"
+            f"🎨 Цвет: {color}\n"
+            f"📏 Размеры: {sizes}\n"
+            f"🧵 Материал: {material}\n\n"
+            f"📦 Доставка по всей России.\n\n"
+            f"📩 Пишите или звоните прямо сейчас — "
+            f"отвечу на вопросы и помогу с выбором."
+        )
     formatted_description = description.replace("\n", "  \n")
     st.markdown(formatted_description)
 
@@ -215,30 +215,30 @@ if st.session_state.get("listing_created"):
     col4, col5 = st.columns(2, gap="small")
 
     with col4:
-       if st.button(
+        if st.button(
         "Сохранить товар",
         use_container_width=True
     ):
-        if "saved_products" not in st.session_state:
-            st.session_state["saved_products"] = []
+            if "saved_products" not in st.session_state:
+                st.session_state["saved_products"] = []
 
-        saved_product = {
-            "title": title,
-            "description": description,
-            "purchase_price": purchase_price,
-            "recommended_price": recommended_price,
-            "supplier_text": supplier_text,
-            "extra_info": extra_info,
-            "ai_result": ai_result,
-        }
+            saved_product = {
+                "title": title,
+                "description": description,
+                "purchase_price": purchase_price,
+                "recommended_price": recommended_price,
+                "supplier_text": supplier_text,
+                "extra_info": extra_info,
+                "ai_result": ai_result,
+            }
 
-        st.session_state["saved_products"].append(saved_product)
+            st.session_state["saved_products"].append(saved_product)
 
-        save_saved_products(
-            st.session_state["saved_products"]
-        )
+            save_saved_products(
+                st.session_state["saved_products"]
+            )
 
-        st.session_state["product_saved"] = True
+            st.session_state["product_saved"] = True
 
     with col5:
         if st.button(
@@ -246,11 +246,19 @@ if st.session_state.get("listing_created"):
             use_container_width=True
         ):
             with st.spinner("AVELON создаёт новый вариант..."):
-                ai_result = generate_listing(
-                    supplier_text=supplier_text,
-                    purchase_price=purchase_price,
-                    extra_info=extra_info,
-                )
+                try:
+                    ai_result = generate_listing(
+                        supplier_text=supplier_text,
+                        purchase_price=purchase_price,
+                        extra_info=extra_info,
+                        photos=photos,
+                    )
+                except Exception:
+                        st.error(
+                            "Не удалось перегенерировать карточку. "
+                            "Проверь подключение к AI и попробуй ещё раз."
+                        )
+                        st.stop()
 
             st.session_state["ai_result"] = ai_result
             st.session_state["copy_mode"] = None
@@ -274,11 +282,11 @@ if st.session_state.get("listing_created"):
     elif copy_mode == "all":
         copy_all_text = f"""{title}
 
-{description.strip()}
+    {description.strip()}
 
-Рекомендуемая цена: {recommended_price:,.0f} ₽
-Город: {ai_result.get("city", "не определено")}
-"""
+    Рекомендуемая цена: {recommended_price:,.0f} ₽
+    Город: {ai_result.get("city", "не определено")}
+    """
         st.caption("Нажми значок копирования справа:")
         st.code(copy_all_text, language=None)
 
@@ -286,17 +294,24 @@ if st.session_state.get("listing_created"):
 
     st.subheader("Цена")
     st.write(f"Закупочная цена: {purchase_price:,.0f} ₽")
-    st.write(f"Минимальная цена: {minimum_price:,.0f} ₽")
     st.write(f"Рекомендуемая цена: {recommended_price:,.0f} ₽")
     st.write(f"Ожидаемая прибыль: {expected_profit:,.0f} ₽")
 
-    city = ai_result.get("city", "не определено")
-    city_reason = ai_result.get("city_reason", "Причина не определена")
-    competition = ai_result.get("competition", "не определено")
-    sale_probability = ai_result.get("sale_probability", "не определено")
-    if isinstance(sale_probability, str):
+    city = ai_result.get("city") or "не определено"
+    city_reason = ai_result.get("city_reason") or "Причина не определена"
+    competition = ai_result.get("competition") or "не определено"
+    sale_probability = ai_result.get("sale_probability") or "не определено"
+    sale_time = ai_result.get("sale_time") or "не определено"
+
+
+    if isinstance(sale_probability, (int, float)):
+        sale_probability = f"{int(sale_probability)}%"
+
+    elif isinstance(sale_probability, str):
         sale_probability = sale_probability.strip()
-    sale_time = ai_result.get("sale_time", "не определено")
+
+    if sale_probability.isdigit():
+        sale_probability = f"{sale_probability}%"
 
     st.subheader("Аналитика")
     st.write(f"Рекомендуемый город: {city}")
