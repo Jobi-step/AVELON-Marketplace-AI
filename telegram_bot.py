@@ -1,0 +1,925 @@
+import os
+import json
+from ai_client import generate_listing
+from dotenv import load_dotenv
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
+
+load_dotenv()
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+
+async def start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("➕ Создать объявление")],
+        [
+            KeyboardButton("📦 Сохранённые товары"),
+            KeyboardButton("👤 Мой профиль"),
+        ],
+        [KeyboardButton("⚙️ Настройки")],
+    ]
+
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+    )
+
+    await update.message.reply_text(
+        "AVELON Marketplace AI\n\n"
+        "Создавайте готовые объявления для Avito с помощью AI.\n\n"
+        "Выберите действие:",
+        reply_markup=reply_markup,
+    )
+
+
+async def handle_photo(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    if context.user_data.get("stage") != "waiting_photos":
+        return
+
+    if "photos" not in context.user_data:
+        context.user_data["photos"] = []
+
+    photo = update.message.photo[-1]
+
+    context.user_data["photos"].append(photo.file_id)
+
+    photo_count = len(context.user_data["photos"])
+
+    await update.message.reply_text(
+        f"Фото добавлено. Загружено: {photo_count}\n\n"
+        "Можешь отправить ещё фото."
+    )
+
+async def create_listing_start(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    context.user_data.clear()
+    context.user_data["stage"] = "waiting_photos"
+    context.user_data["photos"] = []
+
+    await update.message.reply_text(
+        "Шаг 1 из 3 — Фотографии\n\n"
+        "Отправьте фотографии товара.\n"
+        "Можно загрузить несколько изображений.\n\n"
+        "Когда закончите, нажмите кнопку «✅ Фото загружены».",
+        reply_markup=ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("✅ Фото загружены")],
+                [KeyboardButton("⬅️ Главное меню")],
+            ],
+            resize_keyboard=True,
+        ),
+    )
+
+
+async def photos_done(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    photos = context.user_data.get("photos", [])
+
+    if not photos:
+        await update.message.reply_text(
+            "Сначала отправьте хотя бы одну фотографию товара."
+        )
+        return
+
+    context.user_data["stage"] = "waiting_supplier_text"
+
+    await update.message.reply_text(
+        f"Шаг 2 из 3 — Описание\n\n"
+        f"Фотографий загружено: {len(photos)}\n\n"
+        "Теперь отправьте описание товара от поставщика одним сообщением.",
+        reply_markup=ReplyKeyboardMarkup(
+            [
+                [KeyboardButton("⬅️ Главное меню")],
+            ],
+            resize_keyboard=True,
+        ),
+    )
+
+async def new_listing(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    await create_listing_start(update, context)
+
+async def main_menu(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    context.user_data.clear()
+
+    keyboard = [
+        [KeyboardButton("➕ Создать объявление")],
+        [
+            KeyboardButton("📦 Сохранённые товары"),
+            KeyboardButton("👤 Мой профиль"),
+        ],
+        [KeyboardButton("⚙️ Настройки")],
+    ]
+
+    reply_markup = ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+    )
+
+    await update.message.reply_text(
+        "AVELON Marketplace AI\n\n"
+        "Создавайте готовые объявления для Avito с помощью AI.\n\n"
+        "Выберите действие:",
+        reply_markup=reply_markup,
+    )
+
+result_keyboard = [
+    [
+        KeyboardButton("💾 Сохранить товар"),
+        KeyboardButton("🔄 Перегенерировать"),
+    ],
+    [
+        KeyboardButton("➕ Новое объявление"),
+        KeyboardButton("⬅️ Главное меню"),
+    ],
+]
+
+result_reply_markup = ReplyKeyboardMarkup(
+    result_keyboard,
+    resize_keyboard=True,
+)
+
+async def save_current_product(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    ai_result = context.user_data.get("ai_result")
+    purchase_price = context.user_data.get("purchase_price")
+    supplier_text = context.user_data.get("supplier_text", "")
+
+    if not ai_result:
+        await update.message.reply_text(
+            "Сначала создайте объявление."
+        )
+        return
+
+    product = {
+        "title": ai_result.get("title", "Без названия"),
+        "description": ai_result.get("description", ""),
+        "purchase_price": purchase_price,
+        "recommended_price": ai_result.get("recommended_price", 0),
+        "city": ai_result.get("city", "не определено"),
+        "competition": ai_result.get("competition", "не определено"),
+        "sale_probability": ai_result.get("sale_probability", "не определено"),
+        "sale_time": ai_result.get("sale_time", "не определено"),
+        "supplier_text": supplier_text,
+    }
+
+    try:
+        with open("saved_products.json", "r", encoding="utf-8") as file:
+            saved_products = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        saved_products = []
+
+    saved_products.append(product)
+
+    with open("saved_products.json", "w", encoding="utf-8") as file:
+        json.dump(
+            saved_products,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    await update.message.reply_text(
+        "💾 Товар сохранён."
+    )
+
+async def show_saved_products(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    try:
+        with open("saved_products.json", "r", encoding="utf-8") as file:
+            saved_products = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        saved_products = []
+
+    if not saved_products:
+        await update.message.reply_text(
+            "📦 Сохранённых товаров пока нет."
+        )
+        return
+
+    keyboard = []
+
+    for index, product in enumerate(saved_products, start=1):
+        title = product.get("title", "Без названия")
+
+        button_text = f"{index}. {title}"
+
+        if len(button_text) > 45:
+            button_text = button_text[:42] + "..."
+
+        keyboard.append(
+            [KeyboardButton(button_text)]
+        )
+
+    keyboard.append(
+        [KeyboardButton("⬅️ Главное меню")]
+    )
+
+    await update.message.reply_text(
+        "📦 Сохранённые товары\n\n"
+        "Выберите товар:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def open_saved_product(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    text = update.message.text.strip()
+
+    try:
+        product_number = int(text.split(".", 1)[0])
+    except (ValueError, IndexError):
+        return
+
+    try:
+        with open("saved_products.json", "r", encoding="utf-8") as file:
+            saved_products = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        saved_products = []
+
+    if product_number < 1 or product_number > len(saved_products):
+        await update.message.reply_text(
+            "Товар не найден."
+        )
+        return
+
+    product = saved_products[product_number - 1]
+
+    context.user_data["opened_saved_product"] = product_number - 1
+
+    title = product.get("title", "Без названия")
+    description = product.get("description", "")
+    purchase_price = product.get("purchase_price", 0)
+    recommended_price = product.get("recommended_price", 0)
+    city = product.get("city", "не определено")
+    competition = product.get("competition", "не определено")
+    sale_probability = product.get("sale_probability", "не определено")
+    sale_time = product.get("sale_time", "не определено")
+
+    keyboard = [
+        [KeyboardButton("🗑 Удалить товар")],
+        [KeyboardButton("📦 К сохранённым товарам")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        f"📦 Сохранённый товар\n\n"
+        f"🏷 {title}\n\n"
+        f"{description}\n\n"
+        f"💰 Закупочная цена: {purchase_price:,.0f} ₽\n"
+        f"💵 Рекомендуемая цена: {recommended_price:,.0f} ₽\n\n"
+        f"📍 Город: {city}\n"
+        f"📊 Конкуренция: {competition}\n"
+        f"🎯 Вероятность продажи: {sale_probability}\n"
+        f"⏱ Срок продажи: {sale_time}",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def delete_saved_product(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    product_index = context.user_data.get("opened_saved_product")
+
+    if product_index is None:
+        await update.message.reply_text(
+            "Сначала откройте сохранённый товар."
+        )
+        return
+
+    try:
+        with open("saved_products.json", "r", encoding="utf-8") as file:
+            saved_products = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        saved_products = []
+
+    if product_index < 0 or product_index >= len(saved_products):
+        await update.message.reply_text(
+            "Товар не найден."
+        )
+        return
+
+    deleted_product = saved_products.pop(product_index)
+
+    with open("saved_products.json", "w", encoding="utf-8") as file:
+        json.dump(
+            saved_products,
+            file,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    context.user_data.pop("opened_saved_product", None)
+
+    title = deleted_product.get("title", "Товар")
+
+    await update.message.reply_text(
+        f"🗑 {title}\n\nТовар удалён."
+    )
+
+    await show_saved_products(update, context)
+
+async def show_profile(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    user = update.effective_user
+
+    try:
+        with open("saved_products.json", "r", encoding="utf-8") as file:
+            saved_products = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        saved_products = []
+
+    telegram_id = user.id if user else "не определён"
+    username = f"@{user.username}" if user and user.username else "не указан"
+
+    tariff = context.user_data.get("tariff", "Базовый")
+    subscription_until = context.user_data.get(
+        "subscription_until",
+        "не активирована",
+    )
+
+    keyboard = [
+        [KeyboardButton("💎 Управление подпиской")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "👤 Мой профиль\n\n"
+        f"🆔 Telegram ID: {telegram_id}\n"
+        f"👤 Username: {username}\n\n"
+        f"💳 Тариф: {tariff}\n"
+        f"📅 Подписка до: {subscription_until}\n\n"
+        f"📦 Сохранённых товаров: {len(saved_products)}",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def show_subscription(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("🟦 Базовая подписка")],
+        [KeyboardButton("💎 Премиум подписка")],
+        [KeyboardButton("👤 Назад в профиль")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "💎 Управление подпиской\n\n"
+        "Выберите тариф:\n\n"
+        "🟦 Базовая\n"
+        "Основные функции AVELON Marketplace AI.\n\n"
+        "💎 Премиум\n"
+        "Расширенные возможности и дополнительные инструменты.\n\n"
+        "Стоимость и точный состав тарифов добавим после расчёта экономики.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def show_basic_plan(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("💳 Оформить базовую")],
+        [KeyboardButton("💎 К тарифам")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "🟦 Базовая подписка\n\n"
+        "В тариф войдут основные функции AVELON Marketplace AI:\n\n"
+        "• создание объявлений;\n"
+        "• AI-заголовок и описание;\n"
+        "• расчёт рекомендуемой цены;\n"
+        "• выбор города;\n"
+        "• аналитика продажи;\n"
+        "• сохранённые товары.\n\n"
+        "Стоимость определим после финального расчёта.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+
+async def show_premium_plan(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("💳 Оформить премиум")],
+        [KeyboardButton("💎 К тарифам")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "💎 Премиум подписка\n\n"
+        "В тариф войдут все возможности Базовой подписки + расширенные функции.\n\n"
+        "Состав Премиум окончательно зафиксируем после добавления мини-приложения, "
+        "продвижения, генерации изображений и остальных функций.\n\n"
+        "Стоимость определим после финального расчёта.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def show_settings(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("🔔 Уведомления")],
+        [KeyboardButton("🌐 Язык")],
+        [KeyboardButton("🆘 Поддержка")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "⚙️ Настройки\n\n"
+        "Выберите раздел:",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def show_notifications(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("✅ Уведомления включены")],
+        [KeyboardButton("⚙️ Назад в настройки")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "🔔 Уведомления\n\n"
+        "Сейчас уведомления включены.\n\n"
+        "Позже здесь можно будет управлять уведомлениями о подписке, "
+        "новых функциях и важных событиях.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+
+async def show_language(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("🇷🇺 Русский")],
+        [KeyboardButton("⚙️ Назад в настройки")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "🌐 Язык\n\n"
+        "Текущий язык: 🇷🇺 Русский",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+
+async def show_support(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("⚙️ Назад в настройки")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "🆘 Поддержка\n\n"
+        "Если возник вопрос или проблема, обратитесь в поддержку AVELON.\n\n"
+        "Контакты поддержки добавим перед запуском.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def regenerate_listing(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    supplier_text = context.user_data.get("supplier_text", "")
+    purchase_price = context.user_data.get("purchase_price")
+    telegram_photos = context.user_data.get("telegram_photos", [])
+
+    if not supplier_text or not purchase_price:
+        await update.message.reply_text(
+            "Не хватает данных для перегенерации."
+        )
+        return
+
+    await update.message.reply_text(
+        "🔄 AVELON создаёт новый вариант..."
+    )
+
+    try:
+        ai_result = generate_listing(
+            supplier_text=supplier_text,
+            purchase_price=purchase_price,
+            extra_info="",
+            photos=telegram_photos,
+        )
+    except Exception as e:
+        print(e)
+        await update.message.reply_text(
+            "Не удалось перегенерировать объявление."
+        )
+        return
+
+    context.user_data["ai_result"] = ai_result
+
+    title = ai_result.get("title", "Заголовок не определён")
+    description = ai_result.get("description", "Описание не определено")
+    recommended_price = ai_result.get("recommended_price", 0)
+    city = ai_result.get("city", "не определено")
+    competition = ai_result.get("competition", "не определено")
+    sale_probability = ai_result.get("sale_probability", "не определено")
+    sale_time = ai_result.get("sale_time", "не определено")
+
+    await update.message.reply_text(
+        "🔄 Новый вариант готов\n\n"
+        f"🏷 {title}\n\n"
+        f"{description}\n\n"
+        f"💵 Рекомендуемая цена: {recommended_price:,.0f} ₽\n"
+        f"📍 Город: {city}\n"
+        f"📊 Конкуренция: {competition}\n"
+        f"🎯 Вероятность продажи: {sale_probability}\n"
+        f"⏱ Срок продажи: {sale_time}",
+        reply_markup=result_reply_markup,
+    )
+
+async def handle_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    stage = context.user_data.get("stage")
+
+    if stage == "waiting_supplier_text":
+        supplier_text = update.message.text.strip()
+
+        if not supplier_text:
+            await update.message.reply_text(
+                "Описание не должно быть пустым."
+            )
+            return
+
+        context.user_data["supplier_text"] = supplier_text
+        context.user_data["stage"] = "waiting_purchase_price"
+
+        await update.message.reply_text(
+            "Шаг 3 из 3 — Закупочная цена\n\n"
+            "Введите закупочную цену товара в рублях.\n\n"
+            "Например: 2500"
+        )
+        return
+
+    elif stage == "waiting_purchase_price":
+        price_text = update.message.text.strip().replace(" ", "")
+
+        if not price_text.isdigit():
+            await update.message.reply_text(
+                "Введите закупочную цену только цифрами.\n\n"
+                "Например: 2500"
+            )
+            return
+
+        purchase_price = int(price_text)
+
+        if purchase_price <= 0:
+            await update.message.reply_text(
+                "Цена должна быть больше 0."
+            )
+            return
+
+        context.user_data["purchase_price"] = purchase_price
+        context.user_data["stage"] = "generating"
+
+        await update.message.reply_text(
+            "⏳ AVELON анализирует товар и создаёт объявление..."
+        )
+
+        supplier_text = context.user_data.get("supplier_text", "")
+
+        telegram_photos = []
+
+        for file_id in context.user_data.get("photos", []):
+            telegram_file = await context.bot.get_file(file_id)
+            photo_bytes = await telegram_file.download_as_bytearray()
+
+            class TelegramPhoto:
+                def __init__(self, data):
+                    self._data = bytes(data)
+                    self.type = "image/jpeg"
+
+                def getvalue(self):
+                    return self._data
+
+            telegram_photos.append(TelegramPhoto(photo_bytes))
+            context.user_data["telegram_photos"] = telegram_photos
+        try:
+            ai_result = generate_listing(
+                supplier_text=supplier_text,
+                purchase_price=purchase_price,
+                extra_info="",
+                photos=telegram_photos,
+            )
+
+            context.user_data["ai_result"] = ai_result
+
+        except Exception as e:
+            context.user_data["stage"] = "waiting_purchase_price"
+
+            await update.message.reply_text(
+                "Не удалось создать объявление.\n"
+                "Попробуйте ещё раз."
+            )
+
+            print(e)
+            return
+
+        if isinstance(ai_result, dict) and ai_result.get("error"):
+            context.user_data["stage"] = "waiting_purchase_price"
+
+            await update.message.reply_text(
+                f"Не удалось создать объявление.\n\n"
+                f"{ai_result['error']}"
+            )
+            return
+
+        context.user_data["ai_result"] = ai_result
+        context.user_data["stage"] = "listing_ready"
+
+        title = ai_result.get("title") or "Заголовок не определён"
+        description = ai_result.get("description") or "Описание не определено"
+        recommended_price = ai_result.get("recommended_price") or 0
+        city = ai_result.get("city") or "не определён"
+        competition = ai_result.get("competition") or "не определена"
+        sale_probability = ai_result.get("sale_probability") or "не определена"
+        sale_time = ai_result.get("sale_time") or "не определён"
+
+        await update.message.reply_text(
+            "✅ Объявление готово\n\n"
+            f"🏷 {title}\n\n"
+            f"{description}\n\n"
+            f"💰 Закупочная цена: {purchase_price:,} ₽\n"
+            f"💵 Рекомендуемая цена: {recommended_price:,} ₽\n\n"
+            f"📍 Город: {city}\n"
+            f"📊 Конкуренция: {competition}\n"
+            f"🎯 Вероятность продажи: {sale_probability}\n"
+            f"⏱ Срок продажи: {sale_time}",
+            reply_markup=result_reply_markup,
+            )
+        
+def main():
+    if not TELEGRAM_BOT_TOKEN:
+        raise ValueError("TELEGRAM_BOT_TOKEN не найден в .env")
+
+    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+
+    application.add_handler(
+        CommandHandler("start", start)
+    )
+
+    application.add_handler(
+        MessageHandler(
+        filters.TEXT & filters.Regex("^⬅️ Главное меню$"),
+        main_menu,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^💾 Сохранить товар$"),
+            save_current_product,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^🔄 Перегенерировать$"),
+            regenerate_listing,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^📦 Сохранённые товары$"),
+            show_saved_products,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^👤 Мой профиль$"),
+            show_profile,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^⚙️ Настройки$"),
+            show_settings,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^🔔 Уведомления$"),
+            show_notifications,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^🌐 Язык$"),
+            show_language,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^🆘 Поддержка$"),
+            show_support,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^⚙️ Назад в настройки$"),
+            show_settings,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^💎 Управление подпиской$"),
+            show_subscription,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^🟦 Базовая подписка$"),
+            show_basic_plan,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^💎 Премиум подписка$"),
+            show_premium_plan,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^💎 К тарифам$"),
+            show_subscription,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^👤 Назад в профиль$"),
+            show_profile,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^📦 К сохранённым товарам$"),
+            show_saved_products,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^🗑 Удалить товар$"),
+            delete_saved_product,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"^\d+\.\s"),
+            open_saved_product,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^➕ Новое объявление$"),
+            new_listing,
+        )
+    )
+
+    application.add_handler(
+    MessageHandler(
+        filters.TEXT & filters.Regex("^➕ Создать объявление$"),
+        create_listing_start,
+    )
+)
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^✅ Фото загружены$"),
+            photos_done,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT
+            & ~filters.COMMAND
+            & ~filters.Regex("^➕ Создать объявление$")
+            & ~filters.Regex("^✅ Фото загружены$")
+            & ~filters.Regex("^⬅️ Главное меню$")
+            & ~filters.Regex("^📦 Сохранённые товары$")
+            & ~filters.Regex("^👤 Мой профиль$")
+            & ~filters.Regex("^⚙️ Настройки$")
+            & ~filters.Regex("^🔔 Уведомления$")
+            & ~filters.Regex("^🌐 Язык$")
+            & ~filters.Regex("^🆘 Поддержка$")
+            & ~filters.Regex("^⚙️ Назад в настройки$")
+            & ~filters.Regex("^💎 Управление подпиской$")
+            & ~filters.Regex("^🟦 Базовая подписка$")
+            & ~filters.Regex("^💎 Премиум подписка$")
+            & ~filters.Regex("^💎 К тарифам$")
+            & ~filters.Regex("^👤 Назад в профиль$")
+            & ~filters.Regex("^📦 К сохранённым товарам$")
+            & ~filters.Regex("^🗑 Удалить товар$")
+            & ~filters.Regex(r"^\d+\.\s")
+            & ~filters.Regex("^➕ Новое объявление$")
+            & ~filters.Regex("^💾 Сохранить товар$")
+            & ~filters.Regex("^🔄 Перегенерировать$"),
+            handle_text,
+        )
+    )
+
+    application.add_handler(
+            MessageHandler(filters.PHOTO, handle_photo)
+        )
+
+    print("Telegram-бот AVELON запущен")
+
+    application.run_polling()
+
+
+if __name__ == "__main__":
+    main()

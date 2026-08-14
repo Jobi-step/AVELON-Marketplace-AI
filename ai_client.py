@@ -140,12 +140,30 @@ def generate_listing(
 - характеристики никогда не объединяй в одну строку;
 - используй только уместные красивые эмодзи;
 - не превращай описание в длинную статью;
-- длина примерно 450–750 символов;
+- длина описания примерно 250–450 символов;
+- не пиши больше одного короткого продающего абзаца перед характеристиками;
+- первый продающий абзац максимум 1–2 предложения;
+- не повторяй одни и те же преимущества разными словами;
+- не используй длинные рекламные вступления;
+- после короткого вступления сразу переходи к характеристикам;
 - не используй слова "идеальный", "безупречный", "гарантированно", "эксклюзивный" без оснований;
 - не выдумывай скидки, возврат, наличие, гарантии, качество или другие условия;
 - не пиши, оригинальный товар или нет;
 - - не пиши, оригинальный товар или нет;
 - заголовок оптимизируй под поиск Avito;
+- заголовок оптимизируй под поиск Avito;
+- заголовок делай максимально простым и поисковым;
+- структура заголовка: Бренд + тип товара + цвет + пол, если это помогает поиску;
+- не используй слова "стильный", "тёплый", "новая коллекция", "идеальный", "премиальный", "унисекс" без необходимости;
+- не добавляй лишние характеристики в заголовок;
+- не перегружай заголовок;
+- приоритет — естественный запрос покупателя на Avito;
+- примеры хороших заголовков:
+  "Balenciaga брюки мужские бежевые"
+  "Armani Exchange олимпийка мужская чёрная"
+  "Stone Island худи мужская розовая"
+  "Maison Margiela футболка мужская белая"
+- не выдумывай неизвестные характеристики;
 - не выдумывай неизвестные характеристики;
 - если характеристику нельзя определить уверенно — напиши "не определено";
 - не используй Москву и Санкт-Петербург по умолчанию;
@@ -241,4 +259,48 @@ def generate_listing(
 
         content = content.strip()
 
-    return json.loads(content)
+    result = json.loads(content)
+
+    ai_price = result.get("recommended_price", 0)
+
+    minimum_allowed_price = purchase_price + 1000
+    maximum_allowed_price = purchase_price + 1600
+
+    if (
+        not isinstance(ai_price, (int, float))
+        or ai_price < minimum_allowed_price
+        or ai_price > maximum_allowed_price
+    ):
+        ai_price = purchase_price + 1200
+
+    result["recommended_price"] = round(ai_price / 10) * 10
+
+    city = str(result.get("city", "")).strip()
+
+    blocked_default_cities = {
+        "москва",
+        "санкт-петербург",
+        "спб",
+    }
+
+    if not city or city.lower() in blocked_default_cities:
+        result["city"] = "Казань"
+        result["city_reason"] = (
+            "Выбран крупный региональный рынок с хорошим спросом "
+            "и более умеренной конкуренцией, чем в Москве и Санкт-Петербурге."
+        )
+
+    competition = str(result.get("competition", "")).strip().lower()
+    sale_probability = str(result.get("sale_probability", "")).strip()
+    sale_time = str(result.get("sale_time", "")).strip()
+
+    if not competition or competition in {"не определено", "не определена", "unknown"}:
+        result["competition"] = "Средняя"
+
+    if not sale_probability or "не определ" in sale_probability.lower():
+        result["sale_probability"] = "70%"
+
+    if not sale_time or "не определ" in sale_time.lower():
+        result["sale_time"] = "1–3 недели"
+
+    return result

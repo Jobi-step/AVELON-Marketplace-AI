@@ -47,3 +47,4 @@ typing_extensions==4.16.0
 urllib3==2.7.0
 uvicorn==0.52.1
 websockets==16.1.1
+python-telegram-bot==22.8
