@@ -1229,7 +1229,7 @@ async def handle_text(
                 supplier_text=supplier_text,
                 purchase_price=purchase_price,
                 extra_info="",
-                photos=telegram_photos,
+                photos=telegram_photos, 
             )
 
             context.user_data["ai_result"] = ai_result
