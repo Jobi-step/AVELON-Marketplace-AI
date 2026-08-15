@@ -539,17 +539,17 @@ async def show_profile(
         paid_remaining = max(
             paid_limit - paid_used,
             0,
-    )
-
-    profile_text += (
+        )
+        
+        profile_text += (
         f"⚡ Генераций осталось: {paid_remaining} из {paid_limit}\n"
         f"📅 Подписка до: {subscription_display}\n"
-    )
+        )
 
     profile_text += (
         f"\n📦 Сохранённых товаров: {len(saved_products)}\n\n"
         "🧠 SELLMIND — AI-мозг ваших продаж."
-    )
+        )
 
     await update.message.reply_text(
         profile_text,
