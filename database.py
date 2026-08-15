@@ -1,8 +1,9 @@
+import os
 import sqlite3
 from datetime import datetime, timezone
 
 
-DB_NAME = "/app/data/avelon_marketplace.db"
+DB_NAME = os.getenv("DB_PATH", "avelon_marketplace.db")
 
 
 def get_connection():
