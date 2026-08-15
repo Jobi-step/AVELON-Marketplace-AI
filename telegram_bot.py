@@ -1,19 +1,47 @@
 import os
 import json
+from database import (
+    ensure_subscription_columns,
+    activate_subscription,
+    increment_paid_generation,
+    get_paid_generation_info,
+    expire_subscription_if_needed,
+    init_db,
+    create_user_if_not_exists,
+    get_user,
+    get_remaining_free_generations,
+    increment_generation,
+    save_product,
+    get_saved_products,
+    delete_saved_product as db_delete_saved_product,
+)
+
 from ai_client import generate_listing
 from dotenv import load_dotenv
 from telegram import (
+    LabeledPrice,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
     Update,
     ReplyKeyboardMarkup,
     KeyboardButton,
 )
 from telegram.ext import (
+    PreCheckoutQueryHandler,
     Application,
     CommandHandler,
     ContextTypes,
     MessageHandler,
     filters,
 )
+
+BASIC_PRICE_STARS = 299
+PREMIUM_PRICE_STARS = 599
+
+BASIC_GENERATION_LIMIT = 50
+PREMIUM_GENERATION_LIMIT = 150
+
+SUBSCRIPTION_PERIOD = 2592000
 
 load_dotenv()
 
@@ -24,6 +52,14 @@ async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
+    user = update.effective_user
+
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+    
     keyboard = [
         [KeyboardButton("➕ Создать объявление")],
         [
@@ -71,6 +107,66 @@ async def create_listing_start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
+
+    user = update.effective_user
+
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+
+    expire_subscription_if_needed(user.id)
+
+    db_user = get_user(user.id)
+
+    if db_user:
+        tariff = db_user[2]
+
+        if tariff == "free":
+            remaining_free = get_remaining_free_generations(
+                user.id
+            )
+
+            if remaining_free <= 0:
+                keyboard = [
+                    [KeyboardButton("💎 Управление подпиской")],
+                    [KeyboardButton("⬅️ Главное меню")],
+                ]
+
+                await update.message.reply_text(
+                    "🎁 Бесплатные генерации закончились.\n\n"
+                    "Вы использовали все 3 бесплатные генерации.\n\n"
+                    "Чтобы продолжить создавать объявления, "
+                    "оформите подписку.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        keyboard,
+                        resize_keyboard=True,
+                    ),
+                )
+                return
+
+        elif tariff in ("basic", "premium"):
+            paid_used, paid_limit = get_paid_generation_info(
+                user.id
+            )
+
+            if paid_used >= paid_limit:
+                keyboard = [
+                    [KeyboardButton("💎 Управление подпиской")],
+                    [KeyboardButton("⬅️ Главное меню")],
+                ]
+
+                await update.message.reply_text(
+                    "📊 Лимит генераций по вашему тарифу закончился.\n\n"
+                    "Новый лимит станет доступен в следующем "
+                    "периоде подписки.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        keyboard,
+                        resize_keyboard=True,
+                    ),
+                )
+                return
+    
     context.user_data.clear()
     context.user_data["stage"] = "waiting_photos"
     context.user_data["photos"] = []
@@ -179,6 +275,13 @@ async def save_current_product(
         )
         return
 
+    user = update.effective_user
+
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+
     product = {
         "title": ai_result.get("title", "Без названия"),
         "description": ai_result.get("description", ""),
@@ -186,51 +289,54 @@ async def save_current_product(
         "recommended_price": ai_result.get("recommended_price", 0),
         "city": ai_result.get("city", "не определено"),
         "competition": ai_result.get("competition", "не определено"),
-        "sale_probability": ai_result.get("sale_probability", "не определено"),
+        "sale_probability": ai_result.get(
+            "sale_probability",
+            "не определено",
+        ),
         "sale_time": ai_result.get("sale_time", "не определено"),
         "supplier_text": supplier_text,
     }
 
-    try:
-        with open("saved_products.json", "r", encoding="utf-8") as file:
-            saved_products = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        saved_products = []
-
-    saved_products.append(product)
-
-    with open("saved_products.json", "w", encoding="utf-8") as file:
-        json.dump(
-            saved_products,
-            file,
-            ensure_ascii=False,
-            indent=2,
-        )
+    save_product(
+        telegram_id=user.id,
+        product=product,
+    )
 
     await update.message.reply_text(
         "💾 Товар сохранён."
     )
-
 async def show_saved_products(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    try:
-        with open("saved_products.json", "r", encoding="utf-8") as file:
-            saved_products = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        saved_products = []
+    user = update.effective_user
+
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+
+    saved_products = get_saved_products(user.id)
 
     if not saved_products:
+        keyboard = [
+            [KeyboardButton("➕ Создать объявление")],
+            [KeyboardButton("⬅️ Главное меню")],
+        ]
+
         await update.message.reply_text(
-            "📦 Сохранённых товаров пока нет."
+            "📦 Сохранённых товаров пока нет.",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True,
+            ),
         )
         return
 
     keyboard = []
 
     for index, product in enumerate(saved_products, start=1):
-        title = product.get("title", "Без названия")
+        title = product[1] or "Без названия"
 
         button_text = f"{index}. {title}"
 
@@ -265,11 +371,9 @@ async def open_saved_product(
     except (ValueError, IndexError):
         return
 
-    try:
-        with open("saved_products.json", "r", encoding="utf-8") as file:
-            saved_products = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        saved_products = []
+    user = update.effective_user
+
+    saved_products = get_saved_products(user.id)
 
     if product_number < 1 or product_number > len(saved_products):
         await update.message.reply_text(
@@ -279,16 +383,17 @@ async def open_saved_product(
 
     product = saved_products[product_number - 1]
 
-    context.user_data["opened_saved_product"] = product_number - 1
+    product_id = product[0]
+    title = product[1] or "Без названия"
+    description = product[2] or ""
+    purchase_price = product[4] or 0
+    recommended_price = product[5] or 0
+    city = product[6] or "не определено"
+    competition = product[7] or "не определено"
+    sale_probability = product[8] or "не определено"
+    sale_time = product[9] or "не определено"
 
-    title = product.get("title", "Без названия")
-    description = product.get("description", "")
-    purchase_price = product.get("purchase_price", 0)
-    recommended_price = product.get("recommended_price", 0)
-    city = product.get("city", "не определено")
-    competition = product.get("competition", "не определено")
-    sale_probability = product.get("sale_probability", "не определено")
-    sale_time = product.get("sale_time", "не определено")
+    context.user_data["opened_saved_product_id"] = product_id
 
     keyboard = [
         [KeyboardButton("🗑 Удалить товар")],
@@ -316,45 +421,36 @@ async def delete_saved_product(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    product_index = context.user_data.get("opened_saved_product")
-
-    if product_index is None:
-        await update.message.reply_text(
-            "Сначала откройте сохранённый товар."
-        )
-        return
-
-    try:
-        with open("saved_products.json", "r", encoding="utf-8") as file:
-            saved_products = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        saved_products = []
-
-    if product_index < 0 or product_index >= len(saved_products):
-        await update.message.reply_text(
-            "Товар не найден."
-        )
-        return
-
-    deleted_product = saved_products.pop(product_index)
-
-    with open("saved_products.json", "w", encoding="utf-8") as file:
-        json.dump(
-            saved_products,
-            file,
-            ensure_ascii=False,
-            indent=2,
-        )
-
-    context.user_data.pop("opened_saved_product", None)
-
-    title = deleted_product.get("title", "Товар")
-
-    await update.message.reply_text(
-        f"🗑 {title}\n\nТовар удалён."
+    product_id = context.user_data.get(
+        "opened_saved_product_id"
     )
 
-    await show_saved_products(update, context)
+    if product_id is None:
+        await update.message.reply_text(
+            "Сначала выберите сохранённый товар."
+        )
+        return
+
+    user = update.effective_user
+
+    db_delete_saved_product(
+        product_id=product_id,
+        telegram_id=user.id,
+    )
+
+    context.user_data.pop(
+        "opened_saved_product_id",
+        None,
+    )
+
+    await update.message.reply_text(
+        "🗑 Товар удалён."
+    )
+
+    await show_saved_products(
+        update,
+        context,
+    )
 
 async def show_profile(
     update: Update,
@@ -362,19 +458,51 @@ async def show_profile(
 ):
     user = update.effective_user
 
-    try:
-        with open("saved_products.json", "r", encoding="utf-8") as file:
-            saved_products = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        saved_products = []
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+    expire_subscription_if_needed(user.id)
 
-    telegram_id = user.id if user else "не определён"
-    username = f"@{user.username}" if user and user.username else "не указан"
+    db_user = get_user(user.id)
 
-    tariff = context.user_data.get("tariff", "Базовый")
-    subscription_until = context.user_data.get(
-        "subscription_until",
-        "не активирована",
+    saved_products = get_saved_products(
+        user.id
+    )
+
+    telegram_id = user.id
+    username = (
+        f"@{user.username}"
+        if user.username
+        else "не указан"
+    )
+
+    tariff = "free"
+    subscription_until = None
+
+    if db_user:
+        tariff = db_user[2]
+        subscription_until = db_user[5]
+
+    remaining_free = get_remaining_free_generations(
+        user.id
+    )
+
+    tariff_names = {
+        "free": "Бесплатный",
+        "basic": "Базовый",
+        "premium": "Премиум",
+    }
+
+    tariff_display = tariff_names.get(
+        tariff,
+        tariff,
+    )
+
+    subscription_display = (
+        subscription_until
+        if subscription_until
+        else "не активирована"
     )
 
     keyboard = [
@@ -382,13 +510,42 @@ async def show_profile(
         [KeyboardButton("⬅️ Главное меню")],
     ]
 
-    await update.message.reply_text(
+    profile_text = (
         "👤 Мой профиль\n\n"
         f"🆔 Telegram ID: {telegram_id}\n"
         f"👤 Username: {username}\n\n"
-        f"💳 Тариф: {tariff}\n"
-        f"📅 Подписка до: {subscription_until}\n\n"
-        f"📦 Сохранённых товаров: {len(saved_products)}",
+        f"💳 Тариф: {tariff_display}\n"
+    )
+
+    if tariff == "free":
+        profile_text += (
+            f"🎁 Бесплатных генераций осталось: "
+            f"{remaining_free} из 3\n"
+        )
+
+    else:
+        paid_used, paid_limit = get_paid_generation_info(
+            user.id
+        )
+
+        paid_remaining = max(
+            paid_limit - paid_used,
+            0,
+        )
+
+        profile_text += (
+            f"🤖 Генераций осталось: "
+            f"{paid_remaining} из {paid_limit}\n"
+        )
+
+    profile_text += (
+        f"📅 Подписка до: {subscription_display}\n\n"
+        f"📦 Сохранённых товаров: "
+        f"{len(saved_products)}"
+    )
+
+    await update.message.reply_text(
+        profile_text,
         reply_markup=ReplyKeyboardMarkup(
             keyboard,
             resize_keyboard=True,
@@ -446,6 +603,172 @@ async def show_basic_plan(
         ),
     )
 
+async def buy_basic_plan(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    user = update.effective_user
+
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+
+    invoice_link = await context.bot.create_invoice_link(
+        title="AVELON Basic",
+        description=(
+            "50 AI-генераций объявлений каждые 30 дней."
+        ),
+        payload=f"subscription:basic:{user.id}",
+        currency="XTR",
+        prices=[
+            LabeledPrice(
+                label="AVELON Basic",
+                amount=BASIC_PRICE_STARS,
+            )
+        ],
+        subscription_period=SUBSCRIPTION_PERIOD,
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"Оплатить {BASIC_PRICE_STARS} ⭐",
+                    url=invoice_link,
+                )
+            ]
+        ]
+    )
+
+    await update.message.reply_text(
+        "🟦 AVELON Basic\n\n"
+        "50 AI-генераций каждые 30 дней.\n"
+        f"Стоимость: {BASIC_PRICE_STARS} ⭐ / 30 дней.\n\n"
+        "Подписка продлевается автоматически через Telegram Stars.",
+        reply_markup=keyboard,
+    )
+
+async def buy_premium_plan(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    user = update.effective_user
+
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+
+    invoice_link = await context.bot.create_invoice_link(
+        title="AVELON Premium",
+        description=(
+            "150 AI-генераций объявлений каждые 30 дней."
+        ),
+        payload=f"subscription:premium:{user.id}",
+        currency="XTR",
+        prices=[
+            LabeledPrice(
+                label="AVELON Premium",
+                amount=PREMIUM_PRICE_STARS,
+            )
+        ],
+        subscription_period=SUBSCRIPTION_PERIOD,
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"Оплатить {PREMIUM_PRICE_STARS} ⭐",
+                    url=invoice_link,
+                )
+            ]
+        ]
+    )
+
+    await update.message.reply_text(
+        "💎 AVELON Premium\n\n"
+        "150 AI-генераций каждые 30 дней.\n"
+        f"Стоимость: {PREMIUM_PRICE_STARS} ⭐ / 30 дней.\n\n"
+        "Подписка продлевается автоматически через Telegram Stars.",
+        reply_markup=keyboard,
+    )
+
+async def precheckout_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    query = update.pre_checkout_query
+
+    await query.answer(
+        ok=True
+    )
+
+async def successful_payment_callback(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    payment = update.message.successful_payment
+    user = update.effective_user
+
+    payload = payment.invoice_payload
+
+    parts = payload.split(":")
+
+    if len(parts) != 3:
+        return
+
+    payment_type, tariff, payload_user_id = parts
+
+    if payment_type != "subscription":
+        return
+
+    if str(user.id) != payload_user_id:
+        return
+
+    if tariff == "basic":
+        generation_limit = BASIC_GENERATION_LIMIT
+        tariff_name = "Базовый"
+
+    elif tariff == "premium":
+        generation_limit = PREMIUM_GENERATION_LIMIT
+        tariff_name = "Премиум"
+
+    else:
+        return
+
+    expiration_date = (
+        payment.subscription_expiration_date
+    )
+
+    if not expiration_date:
+        return
+
+    activate_subscription(
+        telegram_id=user.id,
+        tariff=tariff,
+        subscription_until=expiration_date,
+        generation_limit=generation_limit,
+    )
+
+    keyboard = [
+        [KeyboardButton("➕ Создать объявление")],
+        [KeyboardButton("👤 Мой профиль")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "✅ Подписка активирована!\n\n"
+        f"💳 Тариф: {tariff_name}\n"
+        f"🤖 Генераций: {generation_limit}\n"
+        "📅 Срок: 30 дней\n\n"
+        "Можно создавать объявления.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
 
 async def show_premium_plan(
     update: Update,
@@ -474,10 +797,13 @@ async def show_settings(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     keyboard = [
-        [KeyboardButton("🔔 Уведомления")],
-        [KeyboardButton("🌐 Язык")],
-        [KeyboardButton("🆘 Поддержка")],
-        [KeyboardButton("⬅️ Главное меню")],
+    [KeyboardButton("📖 Гайд")],
+    [
+        KeyboardButton("🔔 Уведомления"),
+        KeyboardButton("🌐 Язык"),
+    ],
+    [KeyboardButton("🆘 Поддержка")],
+    [KeyboardButton("⬅️ Главное меню")],
     ]
 
     await update.message.reply_text(
@@ -536,14 +862,60 @@ async def show_support(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     keyboard = [
+        [KeyboardButton("📖 Гайд")],
         [KeyboardButton("⚙️ Назад в настройки")],
         [KeyboardButton("⬅️ Главное меню")],
     ]
 
     await update.message.reply_text(
-        "🆘 Поддержка\n\n"
-        "Если возник вопрос или проблема, обратитесь в поддержку AVELON.\n\n"
-        "Контакты поддержки добавим перед запуском.",
+        "🆘 Поддержка AVELON\n\n"
+        "Если возник вопрос, ошибка или проблема с ботом — "
+        "напишите нам в Telegram:\n\n"
+        "👤 Миша — @pulkapup\n"
+        "👤 Марат — @upon_aiti\n\n"
+        "Постараемся помочь как можно быстрее.",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
+
+async def show_guide(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    keyboard = [
+        [KeyboardButton("➕ Создать объявление")],
+        [KeyboardButton("🆘 Поддержка")],
+        [KeyboardButton("⬅️ Главное меню")],
+    ]
+
+    await update.message.reply_text(
+        "📖 Как правильно создать объявление\n\n"
+        "1️⃣ Фотографии\n"
+        "Загрузите от 1 до 10 фотографий товара.\n"
+        "Лучше использовать чёткие фото при хорошем освещении.\n\n"
+        "Рекомендуемый порядок:\n"
+        "• главное фото товара;\n"
+        "• вид спереди;\n"
+        "• вид сзади;\n"
+        "• детали и логотип;\n"
+        "• бирки;\n"
+        "• дополнительные ракурсы.\n\n"
+        "2️⃣ Описание поставщика\n"
+        "Отправьте всю информацию, которую дал поставщик:\n"
+        "бренд, модель, размеры, материал, особенности и другие данные.\n\n"
+        "3️⃣ Закупочная цена\n"
+        "Укажите реальную цену, за которую вы покупаете товар.\n\n"
+        "🤖 После этого AVELON AI подготовит:\n"
+        "• заголовок;\n"
+        "• описание;\n"
+        "• рекомендуемую цену продажи;\n"
+        "• город размещения;\n"
+        "• оценку конкуренции;\n"
+        "• вероятность и срок продажи.\n\n"
+        "Чем качественнее исходные фото и данные — "
+        "тем точнее результат.",
         reply_markup=ReplyKeyboardMarkup(
             keyboard,
             resize_keyboard=True,
@@ -554,15 +926,66 @@ async def regenerate_listing(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-    supplier_text = context.user_data.get("supplier_text", "")
-    purchase_price = context.user_data.get("purchase_price")
-    telegram_photos = context.user_data.get("telegram_photos", [])
+    supplier_text = context.user_data.get(
+        "supplier_text",
+        "",
+    )
+    purchase_price = context.user_data.get(
+        "purchase_price"
+    )
+    telegram_photos = context.user_data.get(
+        "telegram_photos",
+        [],
+    )
 
     if not supplier_text or not purchase_price:
         await update.message.reply_text(
             "Не хватает данных для перегенерации."
         )
         return
+
+    user = update.effective_user
+
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+
+    db_user = get_user(user.id)
+    expire_subscription_if_needed(user.id)
+
+    db_user = get_user(user.id)
+
+    if db_user:
+        tariff = db_user[2]
+        remaining_free = get_remaining_free_generations(user.id)
+        if tariff == "free" and remaining_free <= 0:
+            keyboard = [
+                [KeyboardButton("💎 Управление подпиской")],
+                [KeyboardButton("⬅️ Главное меню")],
+            ]
+
+            await update.message.reply_text(
+                "🎁 Бесплатные генерации закончились.\n\n"
+                "Чтобы продолжить создавать объявления, "
+                "выберите подписку.",
+                reply_markup=ReplyKeyboardMarkup(
+                    keyboard,
+                    resize_keyboard=True,
+                ),
+            )
+            return
+
+        if tariff in ("basic", "premium"):
+            paid_used, paid_limit = get_paid_generation_info(
+                user.id
+            )
+
+            if paid_used >= paid_limit:
+                await update.message.reply_text(
+                    "📊 Лимит генераций по вашему тарифу закончился."
+                )
+                return
 
     await update.message.reply_text(
         "🔄 AVELON создаёт новый вариант..."
@@ -575,28 +998,89 @@ async def regenerate_listing(
             extra_info="",
             photos=telegram_photos,
         )
+
     except Exception as e:
         print(e)
+
         await update.message.reply_text(
             "Не удалось перегенерировать объявление."
         )
         return
 
-    context.user_data["ai_result"] = ai_result
+    if isinstance(ai_result, dict) and ai_result.get("error"):
+        await update.message.reply_text(
+            f"Не удалось создать объявление.\n\n"
+            f"{ai_result['error']}"
+        )
+        return
 
-    title = ai_result.get("title", "Заголовок не определён")
-    description = ai_result.get("description", "Описание не определено")
-    recommended_price = ai_result.get("recommended_price", 0)
-    city = ai_result.get("city", "не определено")
-    competition = ai_result.get("competition", "не определено")
-    sale_probability = ai_result.get("sale_probability", "не определено")
-    sale_time = ai_result.get("sale_time", "не определено")
+    if db_user:
+        if db_user[2] == "free":
+            increment_generation(user.id)
+
+        elif db_user[2] in ("basic", "premium"):
+            increment_paid_generation(user.id)
+
+    context.user_data["ai_result"] = ai_result
+    context.user_data["stage"] = "listing_ready"
+
+    title = ai_result.get(
+        "title",
+        "Заголовок не определён",
+    )
+
+    description = ai_result.get(
+        "description",
+        "Описание не определено",
+    )
+
+    recommended_price = ai_result.get(
+        "recommended_price",
+        0,
+    )
+
+    city = ai_result.get(
+        "city",
+        "не определено",
+    )
+
+    competition = ai_result.get(
+        "competition",
+        "не определено",
+    )
+
+    sale_probability = ai_result.get(
+        "sale_probability",
+        "не определено",
+    )
+
+    sale_time = ai_result.get(
+        "sale_time",
+        "не определено",
+    )
+
+    result_keyboard = [
+        [
+            KeyboardButton("💾 Сохранить товар"),
+            KeyboardButton("🔄 Перегенерировать"),
+        ],
+        [
+            KeyboardButton("➕ Новое объявление"),
+            KeyboardButton("⬅️ Главное меню"),
+        ],
+    ]
+
+    result_reply_markup = ReplyKeyboardMarkup(
+        result_keyboard,
+        resize_keyboard=True,
+    )
 
     await update.message.reply_text(
-        "🔄 Новый вариант готов\n\n"
-        f"🏷 {title}\n\n"
-        f"{description}\n\n"
-        f"💵 Рекомендуемая цена: {recommended_price:,.0f} ₽\n"
+        f"✅ Новый вариант готов!\n\n"
+        f"🏷 Заголовок:\n{title}\n\n"
+        f"📝 Описание:\n{description}\n\n"
+        f"💰 Закупочная цена: {purchase_price:,.0f} ₽\n"
+        f"💵 Рекомендуемая цена: {recommended_price:,.0f} ₽\n\n"
         f"📍 Город: {city}\n"
         f"📊 Конкуренция: {competition}\n"
         f"🎯 Вероятность продажи: {sale_probability}\n"
@@ -650,10 +1134,6 @@ async def handle_text(
         context.user_data["purchase_price"] = purchase_price
         context.user_data["stage"] = "generating"
 
-        await update.message.reply_text(
-            "⏳ AVELON анализирует товар и создаёт объявление..."
-        )
-
         supplier_text = context.user_data.get("supplier_text", "")
 
         telegram_photos = []
@@ -672,6 +1152,91 @@ async def handle_text(
 
             telegram_photos.append(TelegramPhoto(photo_bytes))
             context.user_data["telegram_photos"] = telegram_photos
+
+        user = update.effective_user
+
+        create_user_if_not_exists(
+            telegram_id=user.id,
+            username=user.username,
+        )
+
+        db_user = get_user(user.id)
+        expire_subscription_if_needed(user.id)
+
+        db_user = get_user(user.id)
+
+        if db_user:
+            tariff = db_user[2]
+            remaining_free = get_remaining_free_generations(user.id)
+
+            if tariff == "free" and remaining_free <= 0:
+                keyboard = [
+                    [KeyboardButton("💎 Управление подпиской")],
+                    [KeyboardButton("⬅️ Главное меню")],
+                ]
+
+                await update.message.reply_text(
+                    "🎁 Бесплатные генерации закончились.\n\n"
+                    "Вы уже использовали 3 бесплатных объявления.\n"
+                    "Чтобы продолжить создавать объявления, выберите подписку.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        keyboard,
+                        resize_keyboard=True,
+                    ),
+                )
+                return
+
+            await update.message.reply_text(
+                "⌛ AVELON анализирует товар и создаёт объявление..."
+            )
+
+        db_user = get_user(user.id)
+
+        if db_user:
+            tariff = db_user[2]
+            remaining_free = get_remaining_free_generations(user.id)
+
+            if tariff == "free" and remaining_free <= 0:
+                keyboard = [
+                    [KeyboardButton("💎 Управление подпиской")],
+                    [KeyboardButton("⬅️ Главное меню")],
+                ]
+
+                await update.message.reply_text(
+                    "🎁 Бесплатные генерации закончились.\n\n"
+                    "Вы уже использовали 3 бесплатных объявления.\n"
+                    "Чтобы продолжить создавать объявления, выберите подписку.",
+                    reply_markup=ReplyKeyboardMarkup(
+                        keyboard,
+                        resize_keyboard=True,
+                    ),
+                )
+                return
+
+            if tariff in ("basic", "premium"):
+                paid_used, paid_limit = get_paid_generation_info(
+                    user.id
+                )
+
+                if paid_used >= paid_limit:
+                    await update.message.reply_text(
+                        "📊 Лимит генераций по вашему тарифу закончился."
+                    )
+                return
+
+            if tariff in ("basic", "premium"):
+                    paid_used, paid_limit = get_paid_generation_info(
+                        user.id
+                )
+
+            if paid_used >= paid_limit:
+                await update.message.reply_text(
+                    "📊 Лимит генераций по вашему тарифу закончился.\n\n"
+                    "Новый лимит станет доступен после следующего "
+                    "периода подписки."
+                )
+                return
+
         try:
             ai_result = generate_listing(
                 supplier_text=supplier_text,
@@ -702,6 +1267,13 @@ async def handle_text(
             )
             return
 
+        if db_user:
+            if db_user[2] == "free":
+                increment_generation(user.id)
+
+            elif db_user[2] in ("basic", "premium"):
+                increment_paid_generation(user.id)
+
         context.user_data["ai_result"] = ai_result
         context.user_data["stage"] = "listing_ready"
 
@@ -727,6 +1299,9 @@ async def handle_text(
             )
         
 def main():
+    init_db()
+    ensure_subscription_columns()
+
     if not TELEGRAM_BOT_TOKEN:
         raise ValueError("TELEGRAM_BOT_TOKEN не найден в .env")
 
@@ -734,6 +1309,33 @@ def main():
 
     application.add_handler(
         CommandHandler("start", start)
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^💳 Оформить базовую$"),
+            buy_basic_plan,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^💳 Оформить премиум$"),
+            buy_premium_plan,
+        )
+    )
+
+    application.add_handler(
+        PreCheckoutQueryHandler(
+            precheckout_callback
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.SUCCESSFUL_PAYMENT,
+            successful_payment_callback,
+        )
     )
 
     application.add_handler(
@@ -796,6 +1398,13 @@ def main():
         MessageHandler(
             filters.TEXT & filters.Regex("^🆘 Поддержка$"),
             show_support,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex("^📖 Гайд$"),
+            show_guide,
         )
     )
 
@@ -896,10 +1505,13 @@ def main():
             & ~filters.Regex("^🔔 Уведомления$")
             & ~filters.Regex("^🌐 Язык$")
             & ~filters.Regex("^🆘 Поддержка$")
+            & ~filters.Regex("^📖 Гайд$")
             & ~filters.Regex("^⚙️ Назад в настройки$")
             & ~filters.Regex("^💎 Управление подпиской$")
             & ~filters.Regex("^🟦 Базовая подписка$")
             & ~filters.Regex("^💎 Премиум подписка$")
+            & ~filters.Regex("^💳 Оформить базовую$")
+            & ~filters.Regex("^💳 Оформить премиум$")
             & ~filters.Regex("^💎 К тарифам$")
             & ~filters.Regex("^👤 Назад в профиль$")
             & ~filters.Regex("^📦 К сохранённым товарам$")
