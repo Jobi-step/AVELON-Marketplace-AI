@@ -1224,19 +1224,6 @@ async def handle_text(
                     )
                 return
 
-            if tariff in ("basic", "premium"):
-                    paid_used, paid_limit = get_paid_generation_info(
-                        user.id
-                )
-
-            if paid_used >= paid_limit:
-                await update.message.reply_text(
-                    "📊 Лимит генераций по вашему тарифу закончился.\n\n"
-                    "Новый лимит станет доступен после следующего "
-                    "периода подписки."
-                )
-                return
-
         try:
             ai_result = generate_listing(
                 supplier_text=supplier_text,
