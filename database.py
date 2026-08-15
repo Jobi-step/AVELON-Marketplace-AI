@@ -2,7 +2,7 @@ import sqlite3
 from datetime import datetime, timezone
 
 
-DB_NAME = "avelon_marketplace.db"
+DB_NAME = "/app/data/avelon_marketplace.db"
 
 
 def get_connection():
