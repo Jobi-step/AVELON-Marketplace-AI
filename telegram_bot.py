@@ -52,19 +52,22 @@ async def start(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
-
     user = update.effective_user
 
     create_user_if_not_exists(
         telegram_id=user.id,
         username=user.username,
     )
-    
+
     keyboard = [
-        [KeyboardButton("➕ Создать объявление")],
+        [KeyboardButton("🚀 Создать объявление")],
         [
             KeyboardButton("📦 Сохранённые товары"),
             KeyboardButton("👤 Мой профиль"),
+        ],
+        [
+            KeyboardButton("💎 Управление подпиской"),
+            KeyboardButton("📖 Как пользоваться"),
         ],
         [KeyboardButton("⚙️ Настройки")],
     ]
@@ -74,12 +77,31 @@ async def start(
         resize_keyboard=True,
     )
 
-    await update.message.reply_text(
-        "AVELON Marketplace AI\n\n"
-        "Создавайте готовые объявления для Avito с помощью AI.\n\n"
-        "Выберите действие:",
-        reply_markup=reply_markup,
+    welcome_text = (
+        f"👋 Привет, {user.first_name or 'продавец'}!\n\n"
+        "🧠 SELLMIND — AI-мозг ваших продаж.\n\n"
+        "Превращаем фотографии товара в готовое объявление для Avito за несколько секунд.\n\n"
+        "📸 Анализируем фотографии товара\n"
+        "✍️ Создаём заголовок и продающее описание\n"
+        "💰 Рассчитываем рекомендуемую цену\n"
+        "📍 Подбираем город для размещения\n"
+        "📊 Оцениваем конкуренцию и вероятность продажи\n\n"
+        "🎁 Для старта доступны 3 бесплатные генерации.\n\n"
+        "Нажмите «🚀 Создать объявление» — остальное сделает SELLMIND."
     )
+
+    try:
+        with open("assets/sellmind_welcome.png", "rb") as photo:
+            await update.message.reply_photo(
+                photo=photo,
+                caption=welcome_text,
+                reply_markup=reply_markup,
+            )
+    except FileNotFoundError:
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=reply_markup,
+        )
 
 
 async def handle_photo(
@@ -225,10 +247,14 @@ async def main_menu(
     context.user_data.clear()
 
     keyboard = [
-        [KeyboardButton("➕ Создать объявление")],
+        [KeyboardButton("🚀 Создать объявление")],
         [
             KeyboardButton("📦 Сохранённые товары"),
             KeyboardButton("👤 Мой профиль"),
+        ],
+        [
+            KeyboardButton("💎 Управление подпиской"),
+            KeyboardButton("📖 Как пользоваться"),
         ],
         [KeyboardButton("⚙️ Настройки")],
     ]
@@ -239,27 +265,12 @@ async def main_menu(
     )
 
     await update.message.reply_text(
-        "AVELON Marketplace AI\n\n"
-        "Создавайте готовые объявления для Avito с помощью AI.\n\n"
+        "🧠 SELLMIND\n\n"
+        "AI-мозг ваших продаж.\n"
+        "Создавайте готовые объявления для Avito быстрее и проще.\n\n"
         "Выберите действие:",
         reply_markup=reply_markup,
     )
-
-result_keyboard = [
-    [
-        KeyboardButton("💾 Сохранить товар"),
-        KeyboardButton("🔄 Перегенерировать"),
-    ],
-    [
-        KeyboardButton("➕ Новое объявление"),
-        KeyboardButton("⬅️ Главное меню"),
-    ],
-]
-
-result_reply_markup = ReplyKeyboardMarkup(
-    result_keyboard,
-    resize_keyboard=True,
-)
 
 async def save_current_product(
     update: Update,
@@ -320,7 +331,7 @@ async def show_saved_products(
 
     if not saved_products:
         keyboard = [
-            [KeyboardButton("➕ Создать объявление")],
+            [KeyboardButton("🚀 Создать объявление")],
             [KeyboardButton("⬅️ Главное меню")],
         ]
 
@@ -511,37 +522,33 @@ async def show_profile(
     ]
 
     profile_text = (
-        "👤 Мой профиль\n\n"
+        "👤 ПРОФИЛЬ SELLMIND\n\n"
         f"🆔 Telegram ID: {telegram_id}\n"
         f"👤 Username: {username}\n\n"
-        f"💳 Тариф: {tariff_display}\n"
+        f"💎 Тариф: {tariff_display}\n"
     )
 
     if tariff == "free":
         profile_text += (
-            f"🎁 Бесплатных генераций осталось: "
-            f"{remaining_free} из 3\n"
-        )
-
+            f"🎁 Бесплатных генераций: {remaining_free} из 3\n"
+            "📅 Подписка: не активирована\n"
+    )
     else:
-        paid_used, paid_limit = get_paid_generation_info(
-            user.id
-        )
+        paid_used, paid_limit = get_paid_generation_info(user.id)
 
         paid_remaining = max(
             paid_limit - paid_used,
             0,
-        )
-
-        profile_text += (
-            f"🤖 Генераций осталось: "
-            f"{paid_remaining} из {paid_limit}\n"
-        )
+    )
 
     profile_text += (
-        f"📅 Подписка до: {subscription_display}\n\n"
-        f"📦 Сохранённых товаров: "
-        f"{len(saved_products)}"
+        f"⚡ Генераций осталось: {paid_remaining} из {paid_limit}\n"
+        f"📅 Подписка до: {subscription_display}\n"
+    )
+
+    profile_text += (
+        f"\n📦 Сохранённых товаров: {len(saved_products)}\n\n"
+        "🧠 SELLMIND — AI-мозг ваших продаж."
     )
 
     await update.message.reply_text(
@@ -563,14 +570,25 @@ async def show_subscription(
         [KeyboardButton("⬅️ Главное меню")],
     ]
 
+    subscription_text = (
+    "💎 ПОДПИСКИ SELLMIND\n\n"
+    "Выберите тариф под ваш объём работы:\n\n"
+    "🟦 БАЗОВАЯ\n"
+    "Для регулярного создания объявлений.\n"
+    "• 50 AI-генераций каждые 30 дней\n"
+    "• Все основные функции SELLMIND\n"
+    "• Сохранённые товары\n"
+    "• Аналитика объявления\n\n"
+    "💎 ПРЕМИУМ\n"
+    "Для активных продавцов и больших объёмов.\n"
+    "• 150 AI-генераций каждые 30 дней\n"
+    "• Всё из Базовой подписки\n"
+    "• Расширенный лимит генераций\n\n"
+    "Оплата проходит через Telegram Stars ⭐"
+)
+
     await update.message.reply_text(
-        "💎 Управление подпиской\n\n"
-        "Выберите тариф:\n\n"
-        "🟦 Базовая\n"
-        "Основные функции AVELON Marketplace AI.\n\n"
-        "💎 Премиум\n"
-        "Расширенные возможности и дополнительные инструменты.\n\n"
-        "Стоимость и точный состав тарифов добавим после расчёта экономики.",
+        subscription_text,
         reply_markup=ReplyKeyboardMarkup(
             keyboard,
             resize_keyboard=True,
@@ -587,20 +605,22 @@ async def show_basic_plan(
         [KeyboardButton("⬅️ Главное меню")],
     ]
 
+    basic_text = (
+    "🟦 SELLMIND BASIC\n\n"
+    "Для регулярного создания объявлений и повседневной работы.\n\n"
+    "Что входит:\n"
+    "• 50 AI-генераций на 30 дней\n"
+    "• Заголовок и продающее описание\n"
+    "• Рекомендуемая цена\n"
+    "• Выбор города размещения\n"
+    "• Аналитика объявления\n"
+    "• Сохранённые товары\n\n"
+    "💳 Стоимость: 299 ⭐ / 30 дней\n\n"
+    "Подписка активируется автоматически после успешной оплаты."
+    )
+
     await update.message.reply_text(
-        "🟦 Базовая подписка\n\n"
-        "В тариф войдут основные функции AVELON Marketplace AI:\n\n"
-        "• создание объявлений;\n"
-        "• AI-заголовок и описание;\n"
-        "• расчёт рекомендуемой цены;\n"
-        "• выбор города;\n"
-        "• аналитика продажи;\n"
-        "• сохранённые товары.\n\n"
-        "Стоимость определим после финального расчёта.",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True,
-        ),
+        basic_text
     )
 
 async def buy_basic_plan(
@@ -615,7 +635,7 @@ async def buy_basic_plan(
     )
 
     invoice_link = await context.bot.create_invoice_link(
-        title="AVELON Basic",
+        title="SELLMIND Basic",
         description=(
             "50 AI-генераций объявлений каждые 30 дней."
         ),
@@ -623,7 +643,7 @@ async def buy_basic_plan(
         currency="XTR",
         prices=[
             LabeledPrice(
-                label="AVELON Basic",
+                label="SELLMIND Basic",
                 amount=BASIC_PRICE_STARS,
             )
         ],
@@ -642,7 +662,7 @@ async def buy_basic_plan(
     )
 
     await update.message.reply_text(
-        "🟦 AVELON Basic\n\n"
+        "🟦 SELLMIND Basic\n\n"
         "50 AI-генераций каждые 30 дней.\n"
         f"Стоимость: {BASIC_PRICE_STARS} ⭐ / 30 дней.\n\n"
         "Подписка продлевается автоматически через Telegram Stars.",
@@ -661,7 +681,7 @@ async def buy_premium_plan(
     )
 
     invoice_link = await context.bot.create_invoice_link(
-        title="AVELON Premium",
+        title="SELLMIND Premium",
         description=(
             "150 AI-генераций объявлений каждые 30 дней."
         ),
@@ -669,7 +689,7 @@ async def buy_premium_plan(
         currency="XTR",
         prices=[
             LabeledPrice(
-                label="AVELON Premium",
+                label="SELLMIND Premium",
                 amount=PREMIUM_PRICE_STARS,
             )
         ],
@@ -688,7 +708,7 @@ async def buy_premium_plan(
     )
 
     await update.message.reply_text(
-        "💎 AVELON Premium\n\n"
+        "💎 SELLMIND Premium\n\n"
         "150 AI-генераций каждые 30 дней.\n"
         f"Стоимость: {PREMIUM_PRICE_STARS} ⭐ / 30 дней.\n\n"
         "Подписка продлевается автоматически через Telegram Stars.",
@@ -753,7 +773,7 @@ async def successful_payment_callback(
     )
 
     keyboard = [
-        [KeyboardButton("➕ Создать объявление")],
+        [KeyboardButton("🚀 Создать объявление")],
         [KeyboardButton("👤 Мой профиль")],
         [KeyboardButton("⬅️ Главное меню")],
     ]
@@ -780,16 +800,23 @@ async def show_premium_plan(
         [KeyboardButton("⬅️ Главное меню")],
     ]
 
+    premium_text = (
+    "💎 SELLMIND PREMIUM\n\n"
+    "Для активных продавцов, больших объёмов и постоянной работы.\n\n"
+    "Что входит:\n"
+    "• 150 AI-генераций на 30 дней\n"
+    "• Заголовок и продающее описание\n"
+    "• Рекомендуемая цена\n"
+    "• Выбор города размещения\n"
+    "• Аналитика объявления\n"
+    "• Сохранённые товары\n"
+    "• Увеличенный лимит генераций\n\n"
+    "💳 Стоимость: 599 ⭐ / 30 дней\n\n"
+    "Подписка активируется автоматически после успешной оплаты."
+    )
+
     await update.message.reply_text(
-        "💎 Премиум подписка\n\n"
-        "В тариф войдут все возможности Базовой подписки + расширенные функции.\n\n"
-        "Состав Премиум окончательно зафиксируем после добавления мини-приложения, "
-        "продвижения, генерации изображений и остальных функций.\n\n"
-        "Стоимость определим после финального расчёта.",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard,
-            resize_keyboard=True,
-        ),
+        premium_text
     )
 
 async def show_settings(
@@ -867,55 +894,59 @@ async def show_support(
         [KeyboardButton("⬅️ Главное меню")],
     ]
 
-    await update.message.reply_text(
-        "🆘 Поддержка AVELON\n\n"
-        "Если возник вопрос, ошибка или проблема с ботом — "
-        "напишите нам в Telegram:\n\n"
+    support_text = (
+        "🛟 ПОДДЕРЖКА SELLMIND\n\n"
+        "Возник вопрос, ошибка или проблема с оплатой?\n"
+        "Мы поможем разобраться.\n\n"
         "👤 Миша — @pulkapup\n"
         "👤 Марат — @upon_aiti\n\n"
-        "Постараемся помочь как можно быстрее.",
+        "При обращении желательно сразу указать:\n"
+        "• что вы пытались сделать;\n"
+        "• на каком этапе возникла проблема;\n"
+        "• приложить скриншот ошибки, если он есть.\n\n"
+        "⚡ Постараемся помочь максимально быстро."
+    )
+
+    await update.message.reply_text(
+        support_text,
         reply_markup=ReplyKeyboardMarkup(
             keyboard,
             resize_keyboard=True,
         ),
     )
-
+    
 async def show_guide(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
 ):
     keyboard = [
-        [KeyboardButton("➕ Создать объявление")],
+        [KeyboardButton("🚀 Создать объявление")],
         [KeyboardButton("🆘 Поддержка")],
         [KeyboardButton("⬅️ Главное меню")],
     ]
 
+    guide_text = (
+    "📖 КАК ПОЛЬЗОВАТЬСЯ SELLMIND\n\n"
+    "Создание объявления занимает всего несколько шагов:\n\n"
+    "1️⃣ Нажмите «🚀 Создать объявление».\n\n"
+    "2️⃣ Загрузите фотографии товара.\n"
+    "Можно отправить несколько изображений — SELLMIND проанализирует их вместе.\n\n"
+    "3️⃣ Отправьте краткую информацию о товаре.\n"
+    "Например: бренд, модель, размеры, материал и другие данные от поставщика.\n\n"
+    "4️⃣ Укажите закупочную цену.\n\n"
+    "5️⃣ SELLMIND подготовит:\n"
+    "• заголовок;\n"
+    "• продающее описание;\n"
+    "• рекомендуемую цену;\n"
+    "• город размещения;\n"
+    "• анализ конкуренции;\n"
+    "• вероятность и ориентировочный срок продажи.\n\n"
+    "6️⃣ Сохраните готовый товар или перегенерируйте объявление.\n\n"
+    "💡 Чем качественнее фотографии и исходная информация, тем точнее результат."
+)
+
     await update.message.reply_text(
-        "📖 Как правильно создать объявление\n\n"
-        "1️⃣ Фотографии\n"
-        "Загрузите от 1 до 10 фотографий товара.\n"
-        "Лучше использовать чёткие фото при хорошем освещении.\n\n"
-        "Рекомендуемый порядок:\n"
-        "• главное фото товара;\n"
-        "• вид спереди;\n"
-        "• вид сзади;\n"
-        "• детали и логотип;\n"
-        "• бирки;\n"
-        "• дополнительные ракурсы.\n\n"
-        "2️⃣ Описание поставщика\n"
-        "Отправьте всю информацию, которую дал поставщик:\n"
-        "бренд, модель, размеры, материал, особенности и другие данные.\n\n"
-        "3️⃣ Закупочная цена\n"
-        "Укажите реальную цену, за которую вы покупаете товар.\n\n"
-        "🤖 После этого AVELON AI подготовит:\n"
-        "• заголовок;\n"
-        "• описание;\n"
-        "• рекомендуемую цену продажи;\n"
-        "• город размещения;\n"
-        "• оценку конкуренции;\n"
-        "• вероятность и срок продажи.\n\n"
-        "Чем качественнее исходные фото и данные — "
-        "тем точнее результат.",
+        guide_text,
         reply_markup=ReplyKeyboardMarkup(
             keyboard,
             resize_keyboard=True,
@@ -988,7 +1019,7 @@ async def regenerate_listing(
                 return
 
     await update.message.reply_text(
-        "🔄 AVELON создаёт новый вариант..."
+        "🔄 SELLMIND создаёт новый вариант..."
     )
 
     try:
@@ -1187,7 +1218,7 @@ async def handle_text(
                 return
 
             await update.message.reply_text(
-                "⌛ AVELON анализирует товар и создаёт объявление..."
+                "⌛ SELLMIND анализирует товар и создаёт объявление..."
             )
 
         db_user = get_user(user.id)
@@ -1272,6 +1303,22 @@ async def handle_text(
         sale_probability = ai_result.get("sale_probability") or "не определена"
         sale_time = ai_result.get("sale_time") or "не определён"
 
+        result_keyboard = [
+            [
+                KeyboardButton("💾 Сохранить товар"),
+                KeyboardButton("🔄 Перегенерировать"),
+            ],
+            [
+                KeyboardButton("🚀 Создать объявление"),
+                KeyboardButton("⬅️ Главное меню"),
+            ],
+        ]
+
+        result_reply_markup = ReplyKeyboardMarkup(
+            result_keyboard,
+            resize_keyboard=True,
+        )
+
         await update.message.reply_text(
             "✅ Объявление готово\n\n"
             f"🏷 {title}\n\n"
@@ -1284,6 +1331,57 @@ async def handle_text(
             f"⏱ Срок продажи: {sale_time}",
             reply_markup=result_reply_markup,
             )
+
+async def show_terms(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    terms_text = (
+        "📄 УСЛОВИЯ ИСПОЛЬЗОВАНИЯ SELLMIND\n\n"
+        "SELLMIND предоставляет AI-инструменты для создания и анализа объявлений.\n\n"
+        "Пользователь самостоятельно отвечает за:\n"
+        "• достоверность информации о товаре;\n"
+        "• соответствие объявления правилам Avito;\n"
+        "• законность продажи товара;\n"
+        "• итоговую цену и условия сделки.\n\n"
+        "AI-рекомендации носят информационный характер и не гарантируют продажу товара "
+        "в конкретный срок или по конкретной цене.\n\n"
+        "Оплачивая подписку, пользователь получает доступ к лимиту AI-генераций "
+        "на указанный период.\n\n"
+        "По вопросам использования и оплаты обращайтесь в поддержку SELLMIND."
+    )
+
+    await update.message.reply_text(terms_text)
+
+async def support_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    support_text = (
+        "🛟 ПОДДЕРЖКА SELLMIND\n\n"
+        "Возник вопрос или проблема?\n\n"
+        "👤 Миша — @pulkapup\n"
+        "👤 Марат — @upon_aiti\n\n"
+        "При обращении желательно приложить скриншот и кратко описать проблему."
+    )
+
+    await update.message.reply_text(support_text)
+
+
+async def pay_support_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    pay_support_text = (
+        "💳 ПОДДЕРЖКА ПО ОПЛАТЕ\n\n"
+        "Если подписка не активировалась или возникла проблема с Telegram Stars, "
+        "напишите в поддержку:\n\n"
+        "👤 Миша — @pulkapup\n"
+        "👤 Марат — @upon_aiti\n\n"
+        "Укажите ваш Telegram username и приложите скриншот оплаты."
+    )
+
+    await update.message.reply_text(pay_support_text)
         
 def main():
     init_db()
@@ -1296,6 +1394,26 @@ def main():
 
     application.add_handler(
         CommandHandler("start", start)
+    )
+
+    application.add_handler(
+        CommandHandler("support", support_command)
+    )
+
+    application.add_handler(
+        CommandHandler("paysupport", pay_support_command)
+    )
+
+    application.add_handler(
+        CommandHandler("terms", show_terms)
+    )
+
+    application.add_handler(
+        CommandHandler("profile", show_profile)
+    )
+
+    application.add_handler(
+        CommandHandler("guide", show_guide)
     )
 
     application.add_handler(
@@ -1467,7 +1585,7 @@ def main():
 
     application.add_handler(
     MessageHandler(
-        filters.TEXT & filters.Regex("^➕ Создать объявление$"),
+        filters.TEXT & filters.Regex("^🚀 Создать объявление$"),
         create_listing_start,
     )
 )
@@ -1483,7 +1601,7 @@ def main():
         MessageHandler(
             filters.TEXT
             & ~filters.COMMAND
-            & ~filters.Regex("^➕ Создать объявление$")
+            & ~filters.Regex("^🚀 Создать объявление$")
             & ~filters.Regex("^✅ Фото загружены$")
             & ~filters.Regex("^⬅️ Главное меню$")
             & ~filters.Regex("^📦 Сохранённые товары$")
@@ -1515,7 +1633,7 @@ def main():
             MessageHandler(filters.PHOTO, handle_photo)
         )
 
-    print("Telegram-бот AVELON запущен")
+    print("Telegram-бот SELLMIND запущен")
 
     application.run_polling()
 
