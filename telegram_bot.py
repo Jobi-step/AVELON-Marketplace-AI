@@ -1443,11 +1443,11 @@ def main():
 )
 
     application.add_handler(
-        MessageHandler(
-            filters.TEXT & filters.Regex("^💳 Оформить премиум$"),
-            buy_premium_plan,
-        )
+    MessageHandler(
+        filters.TEXT & filters.Regex("^💳 Оплатить Premium — 599 ⭐$"),
+        buy_premium_plan,
     )
+)
 
     application.add_handler(
         PreCheckoutQueryHandler(
