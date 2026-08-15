@@ -619,10 +619,20 @@ async def show_basic_plan(
     "Подписка активируется автоматически после успешной оплаты."
     )
 
-    await update.message.reply_text(
-        basic_text
-    )
+    keyboard = [
+    [KeyboardButton("💳 Оплатить Basic — 299 ⭐")],
+    [KeyboardButton("💎 Премиум подписка")],
+    [KeyboardButton("⬅️ К тарифам")],
+    [KeyboardButton("⬅️ Главное меню")],
+]
 
+    await update.message.reply_text(
+        basic_text,
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
+    )
 async def buy_basic_plan(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -815,8 +825,19 @@ async def show_premium_plan(
     "Подписка активируется автоматически после успешной оплаты."
     )
 
+    keyboard = [
+    [KeyboardButton("💳 Оплатить Premium — 599 ⭐")],
+    [KeyboardButton("🟦 Базовая подписка")],
+    [KeyboardButton("⬅️ К тарифам")],
+    [KeyboardButton("⬅️ Главное меню")],
+]
+
     await update.message.reply_text(
-        premium_text
+        premium_text,
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True,
+        ),
     )
 
 async def show_settings(
@@ -1415,11 +1436,11 @@ def main():
     )
 
     application.add_handler(
-        MessageHandler(
-            filters.TEXT & filters.Regex("^💳 Оформить базовую$"),
-            buy_basic_plan,
-        )
+    MessageHandler(
+        filters.TEXT & filters.Regex("^💳 Оплатить Basic — 299 ⭐$"),
+        buy_basic_plan,
     )
+)
 
     application.add_handler(
         MessageHandler(
@@ -1611,8 +1632,8 @@ def main():
             & ~filters.Regex("^📖 Как пользоваться$")
             & ~filters.Regex("^⚙️ Назад в настройки$")
             & ~filters.Regex("^💎 Управление подпиской$")
-            & ~filters.Regex("^🟦 Базовая подписка$")
-            & ~filters.Regex("^💎 Премиум подписка$")
+            & ~filters.Regex("^💳 Оплатить Basic — 299 ⭐$")
+            & ~filters.Regex("^💳 Оплатить Premium — 599 ⭐$")
             & ~filters.Regex("^💳 Оформить базовую$")
             & ~filters.Regex("^💳 Оформить премиум$")
             & ~filters.Regex("^💎 К тарифам$")
