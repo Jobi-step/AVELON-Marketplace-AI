@@ -824,7 +824,6 @@ async def show_settings(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     keyboard = [
-    [KeyboardButton("📖 Гайд")],
     [
         KeyboardButton("🔔 Уведомления"),
         KeyboardButton("🌐 Язык"),
@@ -889,7 +888,6 @@ async def show_support(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     keyboard = [
-        [KeyboardButton("📖 Гайд")],
         [KeyboardButton("⚙️ Назад в настройки")],
         [KeyboardButton("⬅️ Главное меню")],
     ]
@@ -1508,7 +1506,7 @@ def main():
 
     application.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Regex("^📖 Гайд$"),
+            filters.TEXT & filters.Regex("^📖 Как пользоваться$"),
             show_guide,
         )
     )
@@ -1610,7 +1608,7 @@ def main():
             & ~filters.Regex("^🔔 Уведомления$")
             & ~filters.Regex("^🌐 Язык$")
             & ~filters.Regex("^🆘 Поддержка$")
-            & ~filters.Regex("^📖 Гайд$")
+            & ~filters.Regex("^📖 Как пользоваться$")
             & ~filters.Regex("^⚙️ Назад в настройки$")
             & ~filters.Regex("^💎 Управление подпиской$")
             & ~filters.Regex("^🟦 Базовая подписка$")
