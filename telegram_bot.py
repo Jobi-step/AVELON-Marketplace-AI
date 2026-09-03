@@ -1,5 +1,10 @@
 import os
 import json
+import logging
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from database import (
     ensure_subscription_columns,
     activate_subscription,
@@ -17,7 +22,6 @@ from database import (
 )
 
 from ai_client import generate_listing
-from dotenv import load_dotenv
 from telegram import (
     LabeledPrice,
     InlineKeyboardButton,
@@ -43,9 +47,26 @@ PREMIUM_GENERATION_LIMIT = 150
 
 SUBSCRIPTION_PERIOD = 2592000
 
+UNLIMITED_USERS = (
+    {"telegram_id": 1638943985, "username": "upon_aiti"},
+    {"telegram_id": None, "username": "pulkapup"},
+)
+
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+logger = logging.getLogger(__name__)
+
+
+def is_unlimited_user(user):
+    username = (user.username or "").lstrip("@").lower()
+
+    return any(
+        allowed_user["telegram_id"] == user.id
+        or allowed_user["username"].lower() == username
+        for allowed_user in UNLIMITED_USERS
+    )
 
 
 async def start(
@@ -131,17 +152,19 @@ async def create_listing_start(
 ):
 
     user = update.effective_user
+    unlimited_user = is_unlimited_user(user)
 
     create_user_if_not_exists(
         telegram_id=user.id,
         username=user.username,
     )
 
-    expire_subscription_if_needed(user.id)
+    if not unlimited_user:
+        expire_subscription_if_needed(user.id)
 
     db_user = get_user(user.id)
 
-    if db_user:
+    if db_user and not unlimited_user:
         tariff = db_user[2]
 
         if tariff == "free":
@@ -468,12 +491,14 @@ async def show_profile(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     user = update.effective_user
+    unlimited_user = is_unlimited_user(user)
 
     create_user_if_not_exists(
         telegram_id=user.id,
         username=user.username,
     )
-    expire_subscription_if_needed(user.id)
+    if not unlimited_user:
+        expire_subscription_if_needed(user.id)
 
     db_user = get_user(user.id)
 
@@ -491,7 +516,7 @@ async def show_profile(
     tariff = "free"
     subscription_until = None
 
-    if db_user:
+    if db_user and not unlimited_user:
         tariff = db_user[2]
         subscription_until = db_user[5]
 
@@ -516,24 +541,34 @@ async def show_profile(
         else "не активирована"
     )
 
-    keyboard = [
-        [KeyboardButton("💎 Управление подпиской")],
-        [KeyboardButton("⬅️ Главное меню")],
-    ]
+    if unlimited_user:
+        keyboard = [
+            [KeyboardButton("🚀 Создать объявление")],
+            [KeyboardButton("⬅️ Главное меню")],
+        ]
+    else:
+        keyboard = [
+            [KeyboardButton("💎 Управление подпиской")],
+            [KeyboardButton("⬅️ Главное меню")],
+        ]
 
     profile_text = (
         "👤 ПРОФИЛЬ SELLMIND\n\n"
         f"🆔 Telegram ID: {telegram_id}\n"
         f"👤 Username: {username}\n\n"
-        f"💎 Тариф: {tariff_display}\n"
     )
 
-    if tariff == "free":
+    if unlimited_user:
+        profile_text += "🏆 Тариф: Создатель SELLMIND — безлимит ♾️\n"
+    else:
+        profile_text += f"💎 Тариф: {tariff_display}\n"
+
+    if not unlimited_user and tariff == "free":
         profile_text += (
             f"🎁 Бесплатных генераций: {remaining_free} из 3\n"
             "📅 Подписка: не активирована\n"
     )
-    else:
+    elif not unlimited_user:
         paid_used, paid_limit = get_paid_generation_info(user.id)
 
         paid_remaining = max(
@@ -995,6 +1030,7 @@ async def regenerate_listing(
         return
 
     user = update.effective_user
+    unlimited_user = is_unlimited_user(user)
 
     create_user_if_not_exists(
         telegram_id=user.id,
@@ -1002,11 +1038,12 @@ async def regenerate_listing(
     )
 
     db_user = get_user(user.id)
-    expire_subscription_if_needed(user.id)
+    if not unlimited_user:
+        expire_subscription_if_needed(user.id)
 
     db_user = get_user(user.id)
 
-    if db_user:
+    if db_user and not unlimited_user:
         tariff = db_user[2]
         remaining_free = get_remaining_free_generations(user.id)
         if tariff == "free" and remaining_free <= 0:
@@ -1050,7 +1087,11 @@ async def regenerate_listing(
         )
 
     except Exception as e:
-        print(e)
+        logger.error(
+            "Ошибка при перегенерации объявления: %s",
+            e,
+            exc_info=True,
+        )
 
         await update.message.reply_text(
             "Не удалось перегенерировать объявление."
@@ -1064,7 +1105,7 @@ async def regenerate_listing(
         )
         return
 
-    if db_user:
+    if db_user and not unlimited_user:
         if db_user[2] == "free":
             increment_generation(user.id)
 
@@ -1125,16 +1166,20 @@ async def regenerate_listing(
         resize_keyboard=True,
     )
 
+    safe_title = str(title).replace("`", "'")
+    safe_description = str(description).replace("```", "'''")
+
     await update.message.reply_text(
         f"✅ Новый вариант готов!\n\n"
-        f"🏷 Заголовок:\n{title}\n\n"
-        f"📝 Описание:\n{description}\n\n"
+        f"🏷 Заголовок:\n`{safe_title}`\n\n"
+        f"📝 Описание:\n```\n{safe_description}\n```\n\n"
         f"💰 Закупочная цена: {purchase_price:,.0f} ₽\n"
         f"💵 Рекомендуемая цена: {recommended_price:,.0f} ₽\n\n"
         f"📍 Город: {city}\n"
         f"📊 Конкуренция: {competition}\n"
         f"🎯 Вероятность продажи: {sale_probability}\n"
         f"⏱ Срок продажи: {sale_time}",
+        parse_mode="Markdown",
         reply_markup=result_reply_markup,
     )
 
@@ -1204,6 +1249,7 @@ async def handle_text(
             context.user_data["telegram_photos"] = telegram_photos
 
         user = update.effective_user
+        unlimited_user = is_unlimited_user(user)
 
         create_user_if_not_exists(
             telegram_id=user.id,
@@ -1211,15 +1257,17 @@ async def handle_text(
         )
 
         db_user = get_user(user.id)
-        expire_subscription_if_needed(user.id)
+        if not unlimited_user:
+            expire_subscription_if_needed(user.id)
 
         db_user = get_user(user.id)
 
         if db_user:
             tariff = db_user[2]
-            remaining_free = get_remaining_free_generations(user.id)
+            if not unlimited_user:
+                remaining_free = get_remaining_free_generations(user.id)
 
-            if tariff == "free" and remaining_free <= 0:
+            if not unlimited_user and tariff == "free" and remaining_free <= 0:
                 keyboard = [
                     [KeyboardButton("💎 Управление подпиской")],
                     [KeyboardButton("⬅️ Главное меню")],
@@ -1242,7 +1290,7 @@ async def handle_text(
 
         db_user = get_user(user.id)
 
-        if db_user:
+        if db_user and not unlimited_user:
             tariff = db_user[2]
             remaining_free = get_remaining_free_generations(user.id)
 
@@ -1292,7 +1340,11 @@ async def handle_text(
                 "Попробуйте ещё раз."
             )
 
-            print(e)
+            logger.error(
+                "Ошибка при создании объявления: %s",
+                e,
+                exc_info=True,
+            )
             return
 
         if isinstance(ai_result, dict) and ai_result.get("error"):
@@ -1304,7 +1356,7 @@ async def handle_text(
             )
             return
 
-        if db_user:
+        if db_user and not unlimited_user:
             if db_user[2] == "free":
                 increment_generation(user.id)
 
@@ -1338,18 +1390,22 @@ async def handle_text(
             resize_keyboard=True,
         )
 
+        safe_title = str(title).replace("`", "'")
+        safe_description = str(description).replace("```", "'''")
+
         await update.message.reply_text(
             "✅ Объявление готово\n\n"
-            f"🏷 {title}\n\n"
-            f"{description}\n\n"
+            f"🏷 `{safe_title}`\n\n"
+            f"```\n{safe_description}\n```\n\n"
             f"💰 Закупочная цена: {purchase_price:,} ₽\n"
             f"💵 Рекомендуемая цена: {recommended_price:,} ₽\n\n"
             f"📍 Город: {city}\n"
             f"📊 Конкуренция: {competition}\n"
             f"🎯 Вероятность продажи: {sale_probability}\n"
             f"⏱ Срок продажи: {sale_time}",
+            parse_mode="Markdown",
             reply_markup=result_reply_markup,
-            )
+        )
 
 async def show_terms(
     update: Update,

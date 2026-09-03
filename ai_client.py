@@ -1,6 +1,8 @@
 import os
 import json
 import base64
+import logging
+from pathlib import Path
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -8,7 +10,15 @@ from openai import OpenAI
 
 load_dotenv()
 
-api_key = os.getenv("AITUNNEL_API_KEY")
+logger = logging.getLogger(__name__)
+
+api_key = os.getenv("AITUNNEL_API_KEY") or os.getenv("OPENAI_API_KEY")
+logger.info(
+    "AI API key configured: %s (AITUNNEL_API_KEY=%s, OPENAI_API_KEY=%s)",
+    bool(api_key),
+    bool(os.getenv("AITUNNEL_API_KEY")),
+    bool(os.getenv("OPENAI_API_KEY")),
+)
 
 client = (
     OpenAI(
@@ -41,6 +51,11 @@ def test_ai_connection():
 
     return response.choices[0].message.content
 
+
+def load_marketplace_prompt():
+    prompt_path = Path(__file__).resolve().parent / "MARKETPLACE_PROMPT.md"
+    return prompt_path.read_text(encoding="utf-8")
+
 def generate_listing(
     supplier_text,
     purchase_price,
@@ -48,164 +63,24 @@ def generate_listing(
     photos=None,
 ):
     if client is None:
-        return {"error": "AI не настроен"}
+        logger.error(
+            "AI client is not configured: no API key found "
+            "(AITUNNEL_API_KEY=%s, OPENAI_API_KEY=%s)",
+            bool(os.getenv("AITUNNEL_API_KEY")),
+            bool(os.getenv("OPENAI_API_KEY")),
+        )
+        raise RuntimeError("AI client is not configured: API key is missing")
 
-    prompt = f"""
-Ты — AVELON Marketplace AI.
-
-Твоя задача — на основе данных поставщика создать структурированную карточку объявления для Avito.
-
-Данные пользователя:
-
-Описание поставщика:
-{supplier_text}
-
-Закупочная цена:
-{purchase_price} ₽
-
-Дополнительная информация:
-{extra_info}
-
-Также проанализируй приложенные фотографии товара.
-
-Используй фотографии как дополнительный источник данных:
-- определи тип товара;
-- цвет;
-- визуальные особенности;
-- элементы дизайна;
-- надписи и логотипы;
-- примерную категорию;
-- проверь, соответствует ли текст поставщика фотографиям.
-
-Если текст поставщика и фотографии противоречат друг другу:
-- не выдумывай;
-- отдавай приоритет тому, что можно уверенно определить;
-- при сомнении возвращай "не определено".
-
-Не делай вывод об оригинальности товара по фотографиям.
-
-Определи:
-- бренд;
-- тип товара;
-- цвет;
-- пол;
-- размеры;
-- материал;
-- SEO-заголовок для Avito максимум 50 символов;
-- продающее описание;
-- рекомендуемую цену;
-- город публикации;
-- уровень конкуренции;
-- вероятность продажи строго в процентах, например "70%";
-- ожидаемый срок продажи;
-- рекомендации по фотографиям.
-
-Правила:
-- не пиши, оригинальный товар или нет;
-- доставка по всей России;
-- описание для Avito всегда делай по одной структуре;
-
-СТРУКТУРА ОПИСАНИЯ:
-
-1. Первая строка:
-🔥 бренд + тип товара + цвет + короткая привлекательная характеристика.
-
-2. Затем короткий абзац из 1–2 предложений:
-кратко объясни, чем товар интересен покупателю.
-Не используй пафосные или дешёвые рекламные выражения.
-
-3. Затем характеристики ОБЯЗАТЕЛЬНО каждая с новой строки:
-
-🏷 Бренд: ...
-👕 Тип товара: ...
-🎨 Цвет: ...
-📏 Размеры: ...
-🧵 Материал: ...
-🇹🇷 Производство: ... — только если производство известно
-
-4. Затем отдельной строкой:
-
-📦 Доставка по всей России.
-
-5. Если пользователь указал помощь с размером:
-
-📐 Поможем подобрать подходящий размер.
-
-6. В самом конце отдельным абзацем:
-
-📩 Пишите или звоните прямо сейчас — отвечу на вопросы и помогу с выбором.
-
-Правила оформления:
-- между смысловыми блоками оставляй пустую строку;
-- характеристики никогда не объединяй в одну строку;
-- используй только уместные красивые эмодзи;
-- не превращай описание в длинную статью;
-- длина описания примерно 250–450 символов;
-- не пиши больше одного короткого продающего абзаца перед характеристиками;
-- первый продающий абзац максимум 1–2 предложения;
-- не повторяй одни и те же преимущества разными словами;
-- не используй длинные рекламные вступления;
-- после короткого вступления сразу переходи к характеристикам;
-- не используй слова "идеальный", "безупречный", "гарантированно", "эксклюзивный" без оснований;
-- не выдумывай скидки, возврат, наличие, гарантии, качество или другие условия;
-- не пиши, оригинальный товар или нет;
-- - не пиши, оригинальный товар или нет;
-- заголовок оптимизируй под поиск Avito;
-- заголовок оптимизируй под поиск Avito;
-- заголовок делай максимально простым и поисковым;
-- структура заголовка: Бренд + тип товара + цвет + пол, если это помогает поиску;
-- не используй слова "стильный", "тёплый", "новая коллекция", "идеальный", "премиальный", "унисекс" без необходимости;
-- не добавляй лишние характеристики в заголовок;
-- не перегружай заголовок;
-- приоритет — естественный запрос покупателя на Avito;
-- примеры хороших заголовков:
-  "Balenciaga брюки мужские бежевые"
-  "Armani Exchange олимпийка мужская чёрная"
-  "Stone Island худи мужская розовая"
-  "Maison Margiela футболка мужская белая"
-- не выдумывай неизвестные характеристики;
-- не выдумывай неизвестные характеристики;
-- если характеристику нельзя определить уверенно — напиши "не определено";
-- не используй Москву и Санкт-Петербург по умолчанию;
-- город выбирай по балансу спроса, конкуренции и стоимости продвижения;
-- если нет явных причин выбирать дорогой и перегретый рынок, предпочитай более выгодный город;
-- recommended_price рассчитывай как реалистичную цену для продажи;
-- minimum_price рассчитывай как нижнюю разумную границу цены для быстрой продажи;
-- expected_profit рассчитывай как разницу между recommended_price и purchase_price;
-- кратко объясняй, почему выбран этот город;
-- поле sale_probability всегда возвращай строкой в формате от 0% до 100%;
-- заголовок оптимизируй под поиск Avito;
-- город выбирай по балансу спроса, конкуренции и стоимости продвижения;
-- если характеристику нельзя определить уверенно — напиши "не определено";
-- не выдумывай неизвестные характеристики.
-- краткое объяснение, почему выбран этот город;
-- поле sale_probability всегда возвращай строкой в формате от 0% до 100%;
-
-Верни результат СТРОГО в JSON.
-Без markdown.
-Без ```json.
-Без какого-либо текста до или после JSON.
-
-Формат:
-
-{{
-    "brand": "",
-    "product_type": "",
-    "color": "",
-    "gender": "",
-    "sizes": "",
-    "material": "",
-    "title": "",
-    "description": "",
-    "recommended_price": 0,
-    "city": "",
-    "city_reason": ""
-    "competition": "",
-    "sale_probability": "",
-    "sale_time": "",
-    "photo_recommendations": ""
-}}
-"""
+    prompt = (
+        load_marketplace_prompt()
+        + "\n\n"
+        + "## ДАННЫЕ ТЕКУЩЕГО ЗАПРОСА\n\n"
+        + f"Описание поставщика:\n{supplier_text}\n\n"
+        + f"Закупочная цена: {purchase_price} ₽\n\n"
+        + f"Дополнительная информация:\n{extra_info}\n\n"
+        + "Проанализируй также приложенные фотографии товара.\n\n"
+        + "Верни результат строго в JSON без markdown и текста вне JSON."
+    )
     user_content = [
         {
             "type": "text",
@@ -260,6 +135,41 @@ def generate_listing(
         content = content.strip()
 
     result = json.loads(content)
+
+    listing = result.get("listing") or {}
+    pricing = result.get("pricing") or {}
+    location = result.get("location") or {}
+    market_analysis = result.get("market_analysis") or {}
+
+    result["title"] = listing.get("title") or result.get("title", "")
+    result["description"] = listing.get("description") or result.get(
+        "description",
+        "",
+    )
+    result["recommended_price"] = pricing.get(
+        "recommended_price",
+        result.get("recommended_price", 0),
+    )
+    result["city"] = location.get("recommended_city") or result.get(
+        "city",
+        "",
+    )
+    result["city_reason"] = location.get("reason") or result.get(
+        "city_reason",
+        "",
+    )
+    result["competition"] = market_analysis.get(
+        "competition",
+        result.get("competition", ""),
+    )
+    result["sale_probability"] = market_analysis.get(
+        "sale_probability_percent",
+        result.get("sale_probability", ""),
+    )
+    result["sale_time"] = market_analysis.get(
+        "estimated_sale_time",
+        result.get("sale_time", ""),
+    )
 
     ai_price = result.get("recommended_price", 0)
 
