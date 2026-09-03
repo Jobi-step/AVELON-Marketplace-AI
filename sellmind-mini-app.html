@@ -463,7 +463,7 @@
           <div class="f"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>Рекомендуемая цена и город</div>
           <div class="f"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>Аналитика объявления</div>
         </div>
-        <div class="plan-price"><span class="n">299 ⭐ (299 ₽)</span><span class="u">/ 30 дней</span></div>
+        <div class="plan-price"><span class="n">299 ⭐</span><span class="u">(299 ₽) / 30 дней</span></div>
         <button class="btn-secondary" onclick="selectPlan('basic')">Выбрать Базовую</button>
       </div>
 
@@ -476,7 +476,7 @@
           <div class="f"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>Всё из Базовой подписки</div>
           <div class="f"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 6L9 17l-5-5"/></svg>Расширенный лимит генераций</div>
         </div>
-        <div class="plan-price"><span class="n">599 ⭐ (599 ₽)</span><span class="u">/ 30 дней</span></div>
+        <div class="plan-price"><span class="n">599 ⭐</span><span class="u">(599 ₽) / 30 дней</span></div>
         <button class="btn-primary" onclick="selectPlan('premium')">Выбрать Премиум</button>
       </div>
     </main>
@@ -497,12 +497,12 @@
       </div>
       <div class="pay-method" onclick="selectPay(this,'card')">
         <span class="ic">💳</span>
-        <span class="txt"><span class="t">Банковская карта</span><span class="s">Через ЮKassa</span></span>
+        <span class="txt"><span class="t">Банковская карта</span><span class="s" id="cardSub">Через ЮKassa · 299 ₽</span></span>
         <span class="radio"></span>
       </div>
       <div class="pay-method" onclick="selectPay(this,'sbp')">
         <span class="ic">📱</span>
-        <span class="txt"><span class="t">СБП</span><span class="s">Быстрый перевод по QR / банку</span></span>
+        <span class="txt"><span class="t">СБП</span><span class="s" id="sbpSub">По QR или в приложении банка · 299 ₽</span></span>
         <span class="radio"></span>
       </div>
       <p class="hint" style="text-align:center;color:var(--muted-2)">Подписка активируется автоматически после успешной оплаты и продлевается каждые 30 дней.</p>
@@ -680,18 +680,24 @@
     showToast('Товар сохранён ✓');
     nav('saved');
   }
-  let currentPlan = {name:'SellMind Basic', stars:299};
+  let currentPlan = {name:'SellMind Basic', stars:299, rub:299};
   function selectPlan(id){
-    currentPlan = id==='premium' ? {name:'SellMind Premium', stars:599} : {name:'SellMind Basic', stars:299};
-    document.getElementById('paySummary').textContent = currentPlan.name+' · '+currentPlan.stars+' ⭐';
+    currentPlan = id==='premium' ? {name:'SellMind Premium', stars:599, rub:599} : {name:'SellMind Basic', stars:299, rub:299};
+    document.getElementById('paySummary').textContent = currentPlan.name+' · '+currentPlan.stars+' ⭐ / '+currentPlan.rub+' ₽';
     document.getElementById('payBtnLabel').textContent = 'Оплатить '+currentPlan.stars+' ⭐';
+    document.getElementById('cardSub').textContent = 'Через ЮKassa · '+currentPlan.rub+' ₽';
+    document.getElementById('sbpSub').textContent = 'По QR или в приложении банка · '+currentPlan.rub+' ₽';
     nav('payment');
   }
   function selectPay(el,type){
     document.querySelectorAll('.pay-method').forEach(m=>m.classList.remove('selected'));
     el.classList.add('selected');
-    const label = type==='stars' ? 'Оплатить '+currentPlan.stars+' ⭐' : 'Перейти к оплате';
-    document.getElementById('payBtnLabel').textContent = label;
+    const labels = {
+      stars: 'Оплатить '+currentPlan.stars+' ⭐',
+      card: 'Оплатить картой · '+currentPlan.rub+' ₽',
+      sbp: 'Оплатить через СБП · '+currentPlan.rub+' ₽'
+    };
+    document.getElementById('payBtnLabel').textContent = labels[type];
   }
   function pay(){
     showToast('Подписка активирована ✓');
