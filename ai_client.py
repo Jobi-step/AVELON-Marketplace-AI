@@ -12,6 +12,65 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+PRICE_MARKUP_RANGES = {
+    "футболка": (500, 900),
+    "поло": (500, 900),
+    "майка": (500, 900),
+    "худи": (900, 1300),
+    "свитшот": (900, 1300),
+    "толстовка": (900, 1300),
+    "зип-худи": (900, 1300),
+    "рубашка": (500, 900),
+    "блуза": (500, 900),
+    "кардиган": (500, 900),
+    "джинсы": (700, 1200),
+    "брюки": (700, 1200),
+    "спортивные штаны": (700, 1200),
+    "шорты": (400, 700),
+    "ветровка": (900, 1500),
+    "бомбер": (900, 1500),
+    "лёгкая куртка": (900, 1500),
+    "легкая куртка": (900, 1500),
+    "зимняя куртка": (1000, 2000),
+    "пуховик": (1000, 2000),
+    "кроссовки": (500, 1000),
+    "кеды": (500, 1000),
+    "ботинки": (500, 1000),
+    "обувь": (500, 1000),
+    "сумка": (300, 700),
+    "ремень": (300, 700),
+    "кепка": (300, 700),
+    "шапка": (300, 700),
+    "аксессуары": (300, 700),
+}
+
+
+def fallback_price_markup(result, supplier_text):
+    product_type = result.get("product_type", "")
+    title = result.get("title", "")
+    searchable_text = " ".join(
+        str(value).lower()
+        for value in (product_type, title, supplier_text)
+        if value
+    )
+
+    markup_range = (700, 1100)
+    matched_keyword = None
+    for keyword, candidate_range in PRICE_MARKUP_RANGES.items():
+        if keyword in searchable_text:
+            markup_range = candidate_range
+            matched_keyword = keyword
+            break
+
+    markup = sum(markup_range) // 2
+    logger.warning(
+        "Using price fallback: product_keyword=%s markup_range=%s markup=%s",
+        matched_keyword,
+        markup_range,
+        markup,
+    )
+    return markup
+
 api_key = os.getenv("AITUNNEL_API_KEY") or os.getenv("OPENAI_API_KEY")
 logger.info(
     "AI API key configured: %s (AITUNNEL_API_KEY=%s, OPENAI_API_KEY=%s)",
@@ -142,6 +201,10 @@ def generate_listing(
     market_analysis = result.get("market_analysis") or {}
 
     result["title"] = listing.get("title") or result.get("title", "")
+    result["product_type"] = result.get("product_type") or listing.get(
+        "product_type",
+        "",
+    )
     result["description"] = listing.get("description") or result.get(
         "description",
         "",
@@ -171,19 +234,16 @@ def generate_listing(
         result.get("sale_time", ""),
     )
 
-    ai_price = result.get("recommended_price", 0)
-
-    minimum_allowed_price = purchase_price + 1000
-    maximum_allowed_price = purchase_price + 1600
-
+    ai_price = result.get("recommended_price")
     if (
-        not isinstance(ai_price, (int, float))
-        or ai_price < minimum_allowed_price
-        or ai_price > maximum_allowed_price
+        isinstance(ai_price, bool)
+        or not isinstance(ai_price, (int, float))
+        or ai_price <= purchase_price
     ):
-        ai_price = purchase_price + 1200
-
-    result["recommended_price"] = round(ai_price / 10) * 10
+        result["recommended_price"] = purchase_price + fallback_price_markup(
+            result,
+            supplier_text,
+        )
 
     city = str(result.get("city", "")).strip()
 
