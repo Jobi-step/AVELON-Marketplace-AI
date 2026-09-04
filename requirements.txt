@@ -48,3 +48,4 @@ urllib3==2.7.0
 uvicorn==0.52.1
 websockets==16.1.1
 python-telegram-bot==22.8
+yookassa==3.12.1

@@ -47,8 +47,33 @@ def init_db():
         """
     )
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS processed_yookassa_payments (
+            payment_id TEXT PRIMARY KEY,
+            processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
+
+
+def claim_yookassa_payment(payment_id):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT OR IGNORE INTO processed_yookassa_payments (payment_id)
+        VALUES (?)
+        """,
+        (payment_id,),
+    )
+    claimed = cursor.rowcount == 1
+    conn.commit()
+    conn.close()
+    return claimed
 
 
 def create_user_if_not_exists(telegram_id, username=None):

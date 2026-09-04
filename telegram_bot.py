@@ -7,7 +7,6 @@ load_dotenv()
 
 from database import (
     ensure_subscription_columns,
-    activate_subscription,
     increment_paid_generation,
     get_paid_generation_info,
     expire_subscription_if_needed,
@@ -22,6 +21,13 @@ from database import (
 )
 
 from ai_client import generate_listing
+from payments import create_yookassa_payment
+from subscription_service import (
+    BASIC_GENERATION_LIMIT,
+    PREMIUM_GENERATION_LIMIT,
+    TARIFF_DETAILS,
+    activate_paid_subscription,
+)
 from telegram import (
     LabeledPrice,
     InlineKeyboardButton,
@@ -41,9 +47,6 @@ from telegram.ext import (
 
 BASIC_PRICE_STARS = 299
 PREMIUM_PRICE_STARS = 599
-
-BASIC_GENERATION_LIMIT = 50
-PREMIUM_GENERATION_LIMIT = 150
 
 SUBSCRIPTION_PERIOD = 2592000
 
@@ -621,7 +624,7 @@ async def show_subscription(
     "• 150 AI-генераций каждые 30 дней\n"
     "• Всё из Базовой подписки\n"
     "• Расширенный лимит генераций\n\n"
-    "Оплата проходит через Telegram Stars ⭐"
+    "Доступна оплата через Telegram Stars, банковской картой и СБП."
 )
 
     await update.message.reply_text(
@@ -658,6 +661,8 @@ async def show_basic_plan(
 
     keyboard = [
     [KeyboardButton("💳 Оплатить Basic — 299 ⭐")],
+    [KeyboardButton("💳 Банковская карта — Basic · 299 ₽")],
+    [KeyboardButton("📱 СБП — Basic · 299 ₽")],
     [KeyboardButton("💎 Премиум подписка")],
     [KeyboardButton("⬅️ К тарифам")],
     [KeyboardButton("⬅️ Главное меню")],
@@ -762,6 +767,67 @@ async def buy_premium_plan(
         reply_markup=keyboard,
     )
 
+
+async def request_yookassa_payment(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    text = update.message.text
+    tariff = "premium" if "Premium" in text else "basic"
+    payment_method_type = "sbp" if "СБП" in text else "bank_card"
+
+    context.user_data["yookassa_tariff"] = tariff
+    context.user_data["yookassa_payment_method"] = payment_method_type
+
+    await update.message.reply_text(
+        "Введите email для чека ЮKassa одним сообщением.\n"
+        "Например: name@example.com\n\n"
+        "Для отмены нажмите «⬅️ Главное меню»."
+    )
+
+
+async def complete_yookassa_payment(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    tariff = context.user_data.get("yookassa_tariff")
+    payment_method_type = context.user_data.get("yookassa_payment_method")
+    if not tariff or not payment_method_type:
+        return
+
+    email = update.message.text.strip()
+    user = update.effective_user
+    create_user_if_not_exists(
+        telegram_id=user.id,
+        username=user.username,
+    )
+
+    try:
+        payment_url = await create_yookassa_payment(
+            telegram_id=user.id,
+            tariff=tariff,
+            payment_method_type=payment_method_type,
+            customer_email=email,
+        )
+    except Exception:
+        logger.exception("Failed to create YooKassa payment")
+        await update.message.reply_text(
+            "Не удалось создать платёж. Попробуйте ещё раз или обратитесь в поддержку."
+        )
+        return
+
+    details = TARIFF_DETAILS[tariff]
+    context.user_data.pop("yookassa_tariff", None)
+    context.user_data.pop("yookassa_payment_method", None)
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Перейти к оплате", url=payment_url)]]
+    )
+    await update.message.reply_text(
+        f"{details['name']} SELLMIND — {details['price']} ₽.\n\n"
+        "После успешной оплаты подписка активируется автоматически.",
+        reply_markup=keyboard,
+    )
+
 async def precheckout_callback(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -812,11 +878,10 @@ async def successful_payment_callback(
     if not expiration_date:
         return
 
-    activate_subscription(
+    activate_paid_subscription(
         telegram_id=user.id,
         tariff=tariff,
         subscription_until=expiration_date,
-        generation_limit=generation_limit,
     )
 
     keyboard = [
@@ -864,6 +929,8 @@ async def show_premium_plan(
 
     keyboard = [
     [KeyboardButton("💳 Оплатить Premium — 599 ⭐")],
+    [KeyboardButton("💳 Банковская карта — Premium · 599 ₽")],
+    [KeyboardButton("📱 СБП — Premium · 599 ₽")],
     [KeyboardButton("🟦 Базовая подписка")],
     [KeyboardButton("⬅️ К тарифам")],
     [KeyboardButton("⬅️ Главное меню")],
@@ -1508,6 +1575,21 @@ def main():
 )
 
     application.add_handler(
+        MessageHandler(
+            filters.TEXT
+            & filters.Regex(r"^(💳 Банковская карта|📱 СБП) — (Basic|Premium) · (299|599) ₽$"),
+            request_yookassa_payment,
+        )
+    )
+
+    application.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Regex(r"^[^@\s]+@[^@\s]+\.[^@\s]+$"),
+            complete_yookassa_payment,
+        )
+    )
+
+    application.add_handler(
         PreCheckoutQueryHandler(
             precheckout_callback
         )
@@ -1692,6 +1774,7 @@ def main():
             & ~filters.Regex("^💎 Управление подпиской$")
             & ~filters.Regex("^💳 Оплатить Basic — 299 ⭐$")
             & ~filters.Regex("^💳 Оплатить Premium — 599 ⭐$")
+            & ~filters.Regex(r"^(💳 Банковская карта|📱 СБП) — (Basic|Premium) · (299|599) ₽$")
             & ~filters.Regex("^💳 Оформить базовую$")
             & ~filters.Regex("^💳 Оформить премиум$")
             & ~filters.Regex("^💎 К тарифам$")

@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>SellMind</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -681,6 +682,7 @@
     nav('saved');
   }
   let currentPlan = {name:'SellMind Basic', stars:299, rub:299};
+  let currentPaymentMethod = 'stars';
   function selectPlan(id){
     currentPlan = id==='premium' ? {name:'SellMind Premium', stars:599, rub:599} : {name:'SellMind Basic', stars:299, rub:299};
     document.getElementById('paySummary').textContent = currentPlan.name+' · '+currentPlan.stars+' ⭐ / '+currentPlan.rub+' ₽';
@@ -690,6 +692,7 @@
     nav('payment');
   }
   function selectPay(el,type){
+    currentPaymentMethod = type;
     document.querySelectorAll('.pay-method').forEach(m=>m.classList.remove('selected'));
     el.classList.add('selected');
     const labels = {
@@ -699,9 +702,39 @@
     };
     document.getElementById('payBtnLabel').textContent = labels[type];
   }
-  function pay(){
-    showToast('Подписка активирована ✓');
-    nav('profile');
+  async function pay(){
+    if(currentPaymentMethod === 'stars'){
+      showToast('Откройте оплату Stars в Telegram');
+      return;
+    }
+
+    const webApp = window.Telegram && window.Telegram.WebApp;
+    const initData = webApp ? webApp.initData : '';
+    const customerEmail = window.prompt('Email для чека ЮKassa');
+    if(!customerEmail) return;
+
+    const button = document.getElementById('payBtnLabel');
+    button.textContent = 'Создаём платёж...';
+    try {
+      const response = await fetch('/api/yookassa/create', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          init_data: initData,
+          tariff: currentPlan.name.includes('Premium') ? 'premium' : 'basic',
+          payment_method_type: currentPaymentMethod === 'sbp' ? 'sbp' : 'bank_card',
+          customer_email: customerEmail
+        })
+      });
+      const result = await response.json();
+      if(!response.ok) throw new Error(result.error || 'payment error');
+      window.location.href = result.payment_url;
+    } catch(error) {
+      showToast('Не удалось создать платёж');
+      button.textContent = currentPaymentMethod === 'sbp'
+        ? 'Оплатить через СБП · '+currentPlan.rub+' ₽'
+        : 'Оплатить картой · '+currentPlan.rub+' ₽';
+    }
   }
   function showToast(msg){
     const t = document.getElementById('toast');
