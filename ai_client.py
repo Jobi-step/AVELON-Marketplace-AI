@@ -247,17 +247,10 @@ def generate_listing(
 
     city = str(result.get("city", "")).strip()
 
-    blocked_default_cities = {
-        "москва",
-        "санкт-петербург",
-        "спб",
-    }
-
-    if not city or city.lower() in blocked_default_cities:
-        result["city"] = "Казань"
+    if not city:
+        result["city"] = "не определено"
         result["city_reason"] = (
-            "Выбран крупный региональный рынок с хорошим спросом "
-            "и более умеренной конкуренцией, чем в Москве и Санкт-Петербурге."
+            "Город не определён по ответу AI; требуется уточнение."
         )
 
     competition = str(result.get("competition", "")).strip().lower()
