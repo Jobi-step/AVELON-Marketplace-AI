@@ -22,7 +22,11 @@ PRICE_MARKUP_RANGES = {
     "зип-худи": (900, 1300),
     "рубашка": (500, 900),
     "блуза": (500, 900),
+    "тёплый вязаный кардиган": (900, 1300),
+    "теплый вязаный кардиган": (900, 1300),
+    "вязаный кардиган": (900, 1300),
     "кардиган": (500, 900),
+    "свитер": (900, 1300),
     "джинсы": (700, 1200),
     "брюки": (700, 1200),
     "спортивные штаны": (700, 1200),
@@ -45,7 +49,7 @@ PRICE_MARKUP_RANGES = {
 }
 
 
-def fallback_price_markup(result, supplier_text):
+def price_markup_range(result, supplier_text):
     product_type = result.get("product_type", "")
     title = result.get("title", "")
     searchable_text = " ".join(
@@ -62,6 +66,11 @@ def fallback_price_markup(result, supplier_text):
             matched_keyword = keyword
             break
 
+    return markup_range, matched_keyword
+
+
+def fallback_price_markup(result, supplier_text):
+    markup_range, matched_keyword = price_markup_range(result, supplier_text)
     markup = sum(markup_range) // 2
     logger.warning(
         "Using price fallback: product_keyword=%s markup_range=%s markup=%s",
@@ -244,6 +253,26 @@ def generate_listing(
             result,
             supplier_text,
         )
+
+    markup_range, matched_keyword = price_markup_range(result, supplier_text)
+    gross_margin = result["recommended_price"] - purchase_price
+    maximum_markup = markup_range[1]
+    if gross_margin > maximum_markup:
+        result["recommended_price"] = purchase_price + maximum_markup
+        logger.warning(
+            "Clamped AI price: product_keyword=%s gross_margin=%s "
+            "maximum_markup=%s",
+            matched_keyword,
+            gross_margin,
+            maximum_markup,
+        )
+
+    gross_margin = result["recommended_price"] - purchase_price
+    result["gross_margin"] = gross_margin
+    result["gross_margin_percent"] = round(
+        gross_margin / purchase_price * 100,
+        2,
+    )
 
     city = str(result.get("city", "")).strip()
 
