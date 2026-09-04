@@ -1528,6 +1528,10 @@ async def pay_support_command(
     await update.message.reply_text(pay_support_text)
         
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     init_db()
     ensure_subscription_columns()
 
