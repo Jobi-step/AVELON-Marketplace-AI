@@ -3,9 +3,11 @@ import os
 import hashlib
 import hmac
 import json
+import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 
+from dotenv import load_dotenv
 from starlette.requests import Request
 from starlette.applications import Starlette
 from starlette.responses import FileResponse, JSONResponse
@@ -13,7 +15,18 @@ from starlette.routing import Route
 from telegram import Bot
 from yookassa.domain.notification import WebhookNotificationFactory
 
-from database import claim_yookassa_payment, ensure_subscription_columns, init_db
+from database import (
+    claim_yookassa_payment,
+    ensure_subscription_columns,
+    get_paid_generation_info,
+    get_remaining_free_generations,
+    get_saved_products,
+    get_user,
+    create_user_if_not_exists,
+    expire_subscription_if_needed,
+    init_db,
+)
+from telegram_bot import is_unlimited_user
 from payments import create_yookassa_payment
 from subscription_service import TARIFF_DETAILS, activate_paid_subscription
 
@@ -24,6 +37,9 @@ WEBHOOK_URL = (
     "/yookassa/webhook"
 )
 SUBSCRIPTION_PERIOD = 2592000
+MAX_WEBAPP_AUTH_AGE = 86400
+
+load_dotenv(BASE_DIR / ".env")
 
 
 async def homepage(request):
@@ -61,9 +77,99 @@ def _telegram_webapp_user(init_data):
         return None
 
     try:
-        return json.loads(values["user"])
-    except (KeyError, json.JSONDecodeError):
+        auth_date = int(values["auth_date"])
+        if abs(int(time.time()) - auth_date) > MAX_WEBAPP_AUTH_AGE:
+            return None
+        user = json.loads(values["user"])
+        if not isinstance(user.get("id"), int):
+            return None
+        return user
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
+
+
+def _init_data_from_request(request):
+    return (
+        request.headers.get("X-Telegram-Init-Data")
+        or request.query_params.get("initData")
+        or request.query_params.get("init_data")
+    )
+
+
+def _authenticated_webapp_user(request):
+    return _telegram_webapp_user(_init_data_from_request(request))
+
+
+def _profile_payload(user_data):
+    user_id = user_data["id"]
+    username = user_data.get("username")
+    first_name = user_data.get("first_name", "")
+    create_user_if_not_exists(user_id, username)
+    expire_subscription_if_needed(user_id)
+    db_user = get_user(user_id)
+    saved_products = get_saved_products(user_id)
+    unlimited = is_unlimited_user(
+        type("TelegramUser", (), {"id": user_id, "username": username})()
+    )
+    tariff = db_user[2] if db_user and not unlimited else "unlimited" if unlimited else "free"
+    tariff_names = {
+        "free": "Бесплатный",
+        "basic": "Базовый",
+        "premium": "Премиум",
+        "unlimited": "Безлимит",
+    }
+    if tariff == "free":
+        generation_limit = 3
+        generations_used = max(3 - get_remaining_free_generations(user_id), 0)
+    elif unlimited:
+        generation_limit = None
+        generations_used = 0
+    else:
+        generations_used, generation_limit = get_paid_generation_info(user_id)
+    return {
+        "telegram_id": user_id,
+        "username": username,
+        "first_name": first_name,
+        "tariff": tariff,
+        "tariff_display": tariff_names[tariff],
+        "generations_used": generations_used,
+        "generation_limit": generation_limit,
+        "generations_remaining": (
+            None if generation_limit is None
+            else max(generation_limit - generations_used, 0)
+        ),
+        "saved_products_count": len(saved_products),
+    }
+
+
+def _saved_product_payload(product):
+    return {
+        "id": product[0],
+        "title": product[1],
+        "description": product[2],
+        "purchase_price": product[4],
+        "recommended_price": product[5],
+        "city": product[6],
+        "competition": product[7],
+        "sale_probability": product[8],
+        "sale_time": product[9],
+        "created_at": product[10],
+    }
+
+
+async def profile_route(request: Request):
+    user = _authenticated_webapp_user(request)
+    if not user:
+        return JSONResponse({"error": "Invalid or missing Telegram initData"}, status_code=401)
+    return JSONResponse(_profile_payload(user))
+
+
+async def saved_products_route(request: Request):
+    user = _authenticated_webapp_user(request)
+    if not user:
+        return JSONResponse({"error": "Invalid or missing Telegram initData"}, status_code=401)
+    products = get_saved_products(user["id"])
+    return JSONResponse({"products": [_saved_product_payload(product) for product in products]})
 
 
 async def create_yookassa_payment_route(request: Request):
@@ -146,6 +252,8 @@ app = Starlette(
     routes=[
         Route("/", homepage),
         Route("/sellmind-mini-app.html", homepage),
+        Route("/api/profile", profile_route, methods=["GET"]),
+        Route("/api/saved-products", saved_products_route, methods=["GET"]),
         Route("/api/yookassa/create", create_yookassa_payment_route, methods=["POST"]),
         Route("/yookassa/webhook", yookassa_webhook, methods=["POST"]),
         Route("/{path:path}", page_fallback),

@@ -30,6 +30,9 @@
   .screen{display:none;flex-direction:column;flex:1;position:relative;z-index:2;padding-bottom:calc(90px + env(safe-area-inset-bottom))}
   .screen.active{display:flex}
   .screen.no-tabbar{padding-bottom:calc(24px + env(safe-area-inset-bottom))}
+  .app-loader{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(6,6,10,.94);text-align:center}
+  .app-loader.hidden{display:none}
+  .app-loader.error{color:var(--red)}
 
   /* ---------- topbar (brand) ---------- */
   .topbar{display:flex;align-items:center;justify-content:space-between;padding:calc(18px + env(safe-area-inset-top)) 20px 12px}
@@ -218,6 +221,7 @@
 <div class="glow glow--b"></div>
 
 <div class="app" id="app">
+  <div class="app-loader" id="appLoader">Загрузка профиля...</div>
 
   <!-- ============ HOME ============ -->
   <section class="screen active" data-screen="home">
@@ -230,32 +234,31 @@
     <main>
       <section>
         <p class="eyebrow">AI · МОЗГ ПРОДАЖ</p>
-        <h1 class="big">Привет, Марат 👋</h1>
+        <h1 class="big" id="homeGreeting">Загрузка профиля...</h1>
         <p class="hero-sub">Пришли фото товара — получишь готовое объявление за 30 секунд.</p>
         <button class="btn-primary" style="margin-top:18px" onclick="startCreate()">
           <svg viewBox="0 0 24 24" fill="none" stroke="#0a0a10" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h2.6l1.2-2h8.4l1.2 2H20a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.4"/></svg>
           <span>Создать объявление</span>
         </button>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;font-size:13px">
-          <span style="color:var(--muted)">Сегодня доступно: <b style="color:var(--text)">2 из 3</b></span>
+          <span style="color:var(--muted)">Сегодня доступно: <b id="homeRemaining" style="color:var(--text)">—</b></span>
           <a href="#" onclick="nav('pricing');return false" style="color:var(--gold);font-weight:600;text-decoration:none">Premium →</a>
         </div>
       </section>
       <section class="stats-strip">
-        <div class="stat-chip"><span class="value">78%</span><span class="label">вероятность продажи</span></div>
-        <div class="stat-chip"><span class="value">1</span><span class="label">товар сохранён</span></div>
-        <div class="stat-chip"><span class="value">1/3</span><span class="label">бесплатных генераций</span></div>
+        <div class="stat-chip"><span class="value" id="homeSavedCount">—</span><span class="label">товаров сохранено</span></div>
+        <div class="stat-chip"><span class="value" id="homeGenerations">—</span><span class="label">генераций осталось</span></div>
       </section>
       <section>
         <p class="section-title">Раздел</p>
         <div class="actions-grid">
           <button class="action-card" onclick="nav('saved')">
             <span class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="url(#brandGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16v13H4z"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M4 12h16"/></svg></span>
-            <span class="label">Сохранённые товары</span><span class="sub">1 товар</span>
+            <span class="label">Сохранённые товары</span><span class="sub" id="homeSavedLabel">Загрузка...</span>
           </button>
           <button class="action-card" onclick="nav('pricing')">
             <span class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="url(#brandGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.2 1 5.9-5.2-2.8-5.2 2.8 1-5.9-4.3-4.2 5.9-.8z"/></svg></span>
-            <span class="label">Управление подпиской</span><span class="sub">Бесплатный тариф</span>
+            <span class="label">Управление подпиской</span><span class="sub" id="homeTariff">Загрузка...</span>
           </button>
           <button class="action-card" onclick="nav('settings')">
             <span class="icon-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="url(#brandGrad)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 0 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 0 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 0 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.36.14.68.38.92.7"/></svg></span>
@@ -280,18 +283,8 @@
       </button>
     </header>
     <main>
-      <div class="card" style="display:flex;gap:12px;align-items:center">
-        <div style="width:56px;height:56px;border-radius:12px;background:var(--grad-soft);flex:none;display:flex;align-items:center;justify-content:center">👕</div>
-        <div style="flex:1">
-          <div style="font-weight:700;font-size:14px">Valentino шорты белые</div>
-          <div style="font-size:12px;color:var(--muted);margin-top:2px">Казань · сохранено сегодня</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-family:'Manrope',sans-serif;font-weight:800;font-size:14px">3 100 ₽</div>
-          <div style="font-size:10.5px;color:var(--green)">75% продажа</div>
-        </div>
-      </div>
-      <div class="empty-state">
+      <div id="savedProductsList"></div>
+      <div class="empty-state" id="savedProductsEmpty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16v13H4z"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         <p>Остальные товары появятся здесь после генерации</p>
       </div>
@@ -307,9 +300,9 @@
     </header>
     <main>
       <section class="stats-strip">
-        <div class="stat-chip"><span class="value">1</span><span class="label">объявлений создано</span></div>
-        <div class="stat-chip"><span class="value">78%</span><span class="label">средняя вероятность</span></div>
-        <div class="stat-chip"><span class="value">1/3</span><span class="label">генераций использовано</span></div>
+        <div class="stat-chip"><span class="value" id="statsSavedCount">—</span><span class="label">объявлений создано</span></div>
+        <div class="stat-chip"><span class="value" id="statsRemaining">—</span><span class="label">генераций осталось</span></div>
+        <div class="stat-chip"><span class="value" id="statsTariff">—</span><span class="label">тариф</span></div>
       </section>
 
       <div class="card analytics">
@@ -321,9 +314,9 @@
           <div class="ring-label">75%</div>
         </div>
         <div class="analytics-meta">
-          <div class="row">Товар <b>Valentino шорты</b></div>
-          <div class="row">Город <b>Казань</b></div>
-          <div class="row">Срок продажи <b>1–2 недели</b></div>
+          <div class="row">Профиль <b id="statsUserName">—</b></div>
+          <div class="row">Telegram ID <b id="statsTelegramId">—</b></div>
+          <div class="row">Сохранено <b id="statsSavedSummary">—</b></div>
         </div>
       </div>
 
@@ -521,16 +514,16 @@
     </header>
     <main>
       <div class="profile-head">
-        <div class="avatar-lg">М</div>
-        <div class="profile-name">upon_aiti</div>
-        <div class="profile-handle">Telegram ID: 1638943985</div>
-        <span class="badge">💎 Бесплатный тариф</span>
+        <div class="avatar-lg" id="profileAvatar">?</div>
+        <div class="profile-name" id="profileName">Загрузка...</div>
+        <div class="profile-handle" id="profileHandle">Telegram ID: —</div>
+        <span class="badge" id="profileTariff">Загрузка...</span>
       </div>
 
       <div class="card" style="display:flex;flex-direction:column;gap:10px">
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)"><span>Бесплатные генерации</span><span style="color:var(--text);font-weight:600">1 из 3</span></div>
-        <div class="progress-bar"><i style="width:33%"></i></div>
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-top:4px"><span>Сохранённых товаров</span><span style="color:var(--text);font-weight:600">1</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)"><span>Генерации осталось</span><span id="profileGenerations" style="color:var(--text);font-weight:600">—</span></div>
+        <div class="progress-bar"><i id="profileProgress" style="width:0%"></i></div>
+        <div style="display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-top:4px"><span>Сохранённых товаров</span><span id="profileSavedCount" style="color:var(--text);font-weight:600">—</span></div>
       </div>
 
       <button class="btn-primary" onclick="nav('pricing')">
@@ -642,6 +635,97 @@
 
 <script>
   const tabScreens = ['home','saved','stats','profile'];
+  let profileData = null;
+  let savedProducts = [];
+  const telegramWebApp = window.Telegram && window.Telegram.WebApp;
+
+  function setText(id, value){
+    const element = document.getElementById(id);
+    if(element) element.textContent = value;
+  }
+
+  function formatCount(value){
+    return value === null ? '∞' : String(value);
+  }
+
+  function renderProfile(data){
+    profileData = data;
+    const displayName = data.first_name || data.username || 'Пользователь';
+    const username = data.username ? '@'+data.username : 'username не указан';
+    const remaining = formatCount(data.generations_remaining);
+    const limit = data.generation_limit === null ? '∞' : data.generation_limit;
+    const used = data.generation_limit === null ? 0 : data.generations_used;
+    const progress = data.generation_limit ? Math.min(100, used / data.generation_limit * 100) : 0;
+    setText('homeGreeting', 'Привет, '+displayName+' 👋');
+    setText('homeRemaining', remaining+' из '+limit);
+    setText('homeSavedCount', data.saved_products_count);
+    setText('homeGenerations', remaining);
+    setText('homeSavedLabel', data.saved_products_count+' '+(data.saved_products_count === 1 ? 'товар' : 'товаров'));
+    setText('homeTariff', data.tariff_display+' тариф');
+    setText('statsSavedCount', data.saved_products_count);
+    setText('statsRemaining', remaining);
+    setText('statsTariff', data.tariff_display);
+    setText('statsUserName', username);
+    setText('statsTelegramId', data.telegram_id);
+    setText('statsSavedSummary', data.saved_products_count+' шт.');
+    setText('profileAvatar', (displayName[0] || '?').toUpperCase());
+    setText('profileName', displayName);
+    setText('profileHandle', username+' · Telegram ID: '+data.telegram_id);
+    setText('profileTariff', '💎 '+data.tariff_display+' тариф');
+    setText('profileGenerations', remaining+' из '+limit);
+    setText('profileSavedCount', data.saved_products_count);
+    const progressElement = document.getElementById('profileProgress');
+    if(progressElement) progressElement.style.width = progress+'%';
+  }
+
+  function renderSavedProducts(products){
+    savedProducts = products;
+    const list = document.getElementById('savedProductsList');
+    const empty = document.getElementById('savedProductsEmpty');
+    if(!list || !empty) return;
+    list.innerHTML = products.map(product => `
+      <div class="card" style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
+        <div style="width:56px;height:56px;border-radius:12px;background:var(--grad-soft);flex:none;display:flex;align-items:center;justify-content:center">📦</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(product.title || 'Без названия')}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${escapeHtml(product.city || 'Город не определён')}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:'Manrope',sans-serif;font-weight:800;font-size:14px">${Number(product.recommended_price || 0).toLocaleString('ru-RU')} ₽</div>
+          <div style="font-size:10.5px;color:var(--green)">${escapeHtml(product.sale_probability || '—')}</div>
+        </div>
+      </div>`).join('');
+    empty.style.display = products.length ? 'none' : '';
+  }
+
+  function escapeHtml(value){
+    return String(value).replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character]));
+  }
+
+  async function loadUserData(){
+    const loader = document.getElementById('appLoader');
+    if(telegramWebApp) window.Telegram.WebApp.ready();
+    const initData = telegramWebApp ? telegramWebApp.initData : '';
+    if(!initData){
+      loader.classList.add('error');
+      loader.textContent = 'Откройте это приложение через кнопку в Telegram-боте.';
+      return;
+    }
+    const headers = {'X-Telegram-Init-Data': initData};
+    try {
+      const [profileResponse, productsResponse] = await Promise.all([
+        fetch('/api/profile', {headers}),
+        fetch('/api/saved-products', {headers})
+      ]);
+      if(!profileResponse.ok || !productsResponse.ok) throw new Error('auth');
+      renderProfile(await profileResponse.json());
+      renderSavedProducts((await productsResponse.json()).products || []);
+      loader.classList.add('hidden');
+    } catch(error) {
+      loader.classList.add('error');
+      loader.textContent = 'Не удалось подтвердить Telegram-пользователя. Откройте приложение через кнопку в боте.';
+    }
+  }
   function buildTabbars(){
     document.querySelectorAll('.tabbar').forEach(bar=>{
       const tpl = document.getElementById('tabbarTpl').content.cloneNode(true);
@@ -744,6 +828,7 @@
   }
   buildTabbars();
   updateTabbars('home');
+  loadUserData();
 </script>
 </body>
 </html>
