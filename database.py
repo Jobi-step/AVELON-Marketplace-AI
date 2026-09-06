@@ -23,6 +23,7 @@ def init_db():
             generations_used INTEGER DEFAULT 0,
             free_generations INTEGER DEFAULT 3,
             subscription_until TEXT,
+            source TEXT DEFAULT 'organic',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
@@ -76,7 +77,7 @@ def claim_yookassa_payment(payment_id):
     return claimed
 
 
-def create_user_if_not_exists(telegram_id, username=None):
+def create_user_if_not_exists(telegram_id, username=None, source=None):
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -84,13 +85,15 @@ def create_user_if_not_exists(telegram_id, username=None):
         """
         INSERT OR IGNORE INTO users (
             telegram_id,
-            username
+            username,
+            source
         )
-        VALUES (?, ?)
+        VALUES (?, ?, ?)
         """,
         (
             telegram_id,
             username,
+            source or 'organic',
         ),
     )
 
@@ -286,6 +289,14 @@ def ensure_subscription_columns():
             """
         )
 
+    if "source" not in columns:
+        cursor.execute(
+            """
+            ALTER TABLE users
+            ADD COLUMN source TEXT DEFAULT 'organic'
+            """
+        )
+
     conn.commit()
     conn.close()
 
@@ -404,3 +415,22 @@ def expire_subscription_if_needed(telegram_id):
 
     conn.commit()
     conn.close()
+
+
+def get_sources_stats():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT source, COUNT(*) as count
+        FROM users
+        GROUP BY source
+        ORDER BY count DESC
+        """
+    )
+
+    results = cursor.fetchall()
+    conn.close()
+
+    return results

@@ -18,6 +18,7 @@ from database import (
     save_product,
     get_saved_products,
     delete_saved_product as db_delete_saved_product,
+    get_sources_stats,
 )
 
 from ai_client import generate_listing
@@ -78,9 +79,15 @@ async def start(
 ):
     user = update.effective_user
 
+    # Get traffic source from start parameter
+    source = None
+    if context.args and len(context.args) > 0:
+        source = context.args[0]
+
     create_user_if_not_exists(
         telegram_id=user.id,
         username=user.username,
+        source=source,
     )
 
     keyboard = [
@@ -1076,6 +1083,36 @@ async def show_guide(
         ),
     )
 
+
+async def show_sources(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+):
+    user = update.effective_user
+
+    if not is_unlimited_user(user):
+        await update.message.reply_text(
+            "❌ У вас нет доступа к этой команде."
+        )
+        return
+
+    stats = get_sources_stats()
+
+    if not stats:
+        await update.message.reply_text(
+            "📊 Статистика по источникам трафика:\n\n"
+            "Данных пока нет."
+        )
+        return
+
+    message_text = "📊 Статистика по источникам трафика:\n\n"
+    for source, count in stats:
+        source_display = source or "organic"
+        message_text += f"{source_display}: {count}\n"
+
+    await update.message.reply_text(message_text)
+
+
 async def regenerate_listing(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1562,6 +1599,10 @@ def main():
 
     application.add_handler(
         CommandHandler("guide", show_guide)
+    )
+
+    application.add_handler(
+        CommandHandler("sources", show_sources)
     )
 
     application.add_handler(
